@@ -738,7 +738,7 @@
       }
       const prev = setStatus(ids, st, reason);
       closeModal(); clearSel();
-      toast(t(ids.length > 1 ? '{n} ads moved to {s}' : '{n} ad moved to {s}', { n: ids.length, s: sl(st) }), { undo: () => undoStatus(prev) });
+      toast(t(ids.length > 1 ? '{n} ads moved to {s}' : '{n} ad moved to {s}', { n: ids.length, s: sl(st) }) + (route().name === 'pipeline' ? ' · ' + t('find it in Reports') : ''), { undo: () => undoStatus(prev) });
       render();
     }, { ok: t('Confirm') });
   }
