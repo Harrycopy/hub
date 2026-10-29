@@ -2,7 +2,9 @@
 (function () {
   'use strict';
   const DPR = Math.min(window.devicePixelRatio || 1, 2);
+  // com "animações reduzidas" ligado no sistema a chuva não congela: só cai mais devagar e gira menos
   const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const CALM = reduce ? 0.45 : 1;
 
   // ---- sprites (desenhados uma vez só): notas de dólar US$ 100, 50 e 20, as maiores em circulação ----
   const BILL_W = 312, BILL_H = 132; // proporção da nota americana (156 x 66 mm)
@@ -110,9 +112,9 @@
     }
     const ctx = cv.getContext('2d'); ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     const dt = Math.min(0.05, last ? (ts - last) / 1000 : 0.016); last = ts;
-    if (!reduce) step(dt, ts / 1000);
+    step(dt * CALM, ts / 1000 * CALM);
     draw(ctx);
-    raf = reduce ? 0 : requestAnimationFrame(frame);
+    raf = requestAnimationFrame(frame);
   }
 
   window.MoneyRain = {
@@ -132,7 +134,6 @@
       if (!raf) { last = 0; raf = requestAnimationFrame(frame); }
     },
     burst(x, y, n) {
-      if (reduce) return;
       if (x == null) { x = W / 2; y = H * 0.45; }
       for (let i = 0; i < (n || 30); i++) parts.push(make(x + rnd(-20, 20), y + rnd(-10, 10), true));
       if (!raf) raf = requestAnimationFrame(frame);
