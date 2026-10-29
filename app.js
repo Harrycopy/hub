@@ -179,6 +179,17 @@
       return true;
     }).sort((x, y) => naturalCmp(adTitle(x), adTitle(y)));
   }
+  // ---- contagem por criativo: o mesmo ad com vários gestores conta uma vez só, no status mais avançado que ele tem ----
+  const STATUS_RANK = { validated: 0, scaling: 1, sold_nv: 2, testing: 3, test: 4, sold_rej: 5, rejected: 6 };
+  const adKey = (a) => compact(a.name);
+  function creativeStats(list) {
+    const best = new Map();
+    list.forEach((a) => { const k = adKey(a); const cur = best.get(k); if (!cur || STATUS_RANK[a.status] < STATUS_RANK[cur]) best.set(k, a.status); });
+    const by = {}; STATUSES.forEach((st) => { by[st] = 0; }); best.forEach((st) => { by[st]++; });
+    return { total: best.size, records: list.length, by };
+  }
+  const distinctCount = (list) => new Set(list.map(adKey)).size;
+  const recordsNote = (cs) => (cs.records > cs.total ? ' · ' + t('{n} records (one per manager)', { n: cs.records }) : '');
   const activeFilterCount = (f) => Object.keys(f).filter((k) => k !== 'q' && (Array.isArray(f[k]) ? f[k].length : f[k])).length;
 
   // ---------- métricas ----------
@@ -455,14 +466,14 @@
   // ---------- painel ----------
   function viewPanel() {
     const ads = applyFilters(visibleAds(), {});
-    const c = (s) => ads.filter((a) => a.status === s).length;
+    const cs = creativeStats(ads); const c = (s) => cs.by[s];
     const overdue = DB.offers.filter((o) => canSee(o) && !o.archived && isOverdue(o)).length;
     const tests = DB.tests.filter((x) => canSee(offer(x.offer)) && !offer(x.offer).archived);
     const m = metrics(tests);
     const newBatches = DB.batches.filter((b) => b.status === 'new' && !b.removed).length;
     const cards = [
       ['#/pipeline', '01', t('Pipeline'), t('Every ad from test to validation, in one board.'), `${c('testing')} ${t('testing')} · ${c('scaling')} ${t('scaling')}`],
-      ['#/reports', '02', t('Reports'), t('Every ad, every status, every rejection reason. CSV and PDF.'), `${ads.length} ${t('ads')} · ${c('rejected') + c('sold_rej')} ${t('rejected')}`],
+      ['#/reports', '02', t('Reports'), t('Every ad, every status, every rejection reason. CSV and PDF.'), `${cs.total} ${t('ads')} · ${c('rejected') + c('sold_rej')} ${t('rejected')}`],
       ['#/performance', '03', t('Performance'), t('Where the money is going and what is coming back.'), `ROAS ${num(m.roas, 2)} · ${money(m.spend)}`],
     ];
     const running = c('testing') + c('scaling');
@@ -490,14 +501,14 @@
     const P = UI.pipe;
     const trash = P.view === 'trash' && isAdmin();
     const base = trash ? visibleAds({ trash: true }) : applyFilters(visibleAds(), P.f, { statuses: PIPE });
-    const kpi = (s) => base.filter((a) => a.status === s).length;
+    const cs = creativeStats(base); const kpi = (s) => cs.by[s];
     const trashN = DB.ads.filter((a) => a.trashed).length;
     let body;
     if (trash) body = trashTable(base);
     else if (P.view === 'list') body = adTable(base, 'pipe');
     else body = `<div class="board">${PIPE.map((s) => {
       const col = base.filter((a) => a.status === s);
-      return `<section class="col s-${s}" data-drop="${s}"><header><i></i><b>${esc(sl(s))}</b><span>${col.length}</span></header><div class="col-b">${col.map(card).join('') || `<p class="empty-s">${esc(t('No ads here.'))}</p>`}</div></section>`;
+      return `<section class="col s-${s}" data-drop="${s}"><header><i></i><b>${esc(sl(s))}</b><span title="${esc(t('{n} records (one per manager)', { n: col.length }))}">${distinctCount(col)}</span></header><div class="col-b">${col.map(card).join('') || `<p class="empty-s">${esc(t('No ads here.'))}</p>`}</div></section>`;
     }).join('')}</div>`;
     return `<div class="ph"><div><p class="eyebrow">${esc(t('Operations / Pipeline'))}</p><h1 class="page-title">${esc(t('Ad pipeline'))}</h1></div>
       <div class="ph-a">${isAdmin() ? `<button class="btn primary" data-a="newOffer">${IC.plus}${esc(t('New demand'))}</button>` : ''}</div></div>
@@ -509,7 +520,7 @@
           ${isAdmin() ? `<button class="${trash ? 'on' : ''}" data-a="pipeView" data-v="trash">${IC.trash}${esc(t('Trash'))} <b class="count">${trashN}</b></button>` : ''}
         </div>
         ${P.view === 'board' ? `<button class="btn ghost sm${P.selectMode ? ' on' : ''}" data-a="selectMode">${IC.select}${esc(t('Select'))}</button>` : ''}
-        <span class="muted mono">${base.length} ${esc(trash ? t('in trash') : t('ads'))}</span>
+        <span class="muted mono">${trash ? base.length : cs.total} ${esc(trash ? t('in trash') : t('ads'))}${trash ? '' : esc(recordsNote(cs))}</span>
       </div>
       ${trash ? '' : filterBar('pipe', P.f, P.view === 'list' ? { status: PIPE } : {})}
       ${body}
@@ -716,9 +727,9 @@
     const sc = [['', t('All ads')], ['rejected', t('Rejected')], ['sold_rej', t('Sold · rejected')], ['validated', t('Validated')]];
     return `<div class="ph"><div><p class="eyebrow">${esc(t('Operations / Reports'))}</p><h1 class="page-title">${esc(t('Reports'))}</h1></div>
       <div class="ph-a">${isAdmin() ? `<button class="btn ghost" data-a="csvAll">${IC.down}${esc(t('Consolidated CSV'))}</button><button class="btn ghost" data-a="pdfAll">${IC.down}${esc(t('Consolidated PDF'))}</button>` : ''}</div></div>
-      <div class="seg shortcuts">${sc.map(([s, l]) => `<button class="${(R.f.status || '') === s ? 'on' : ''}" data-a="repShortcut" data-s="${s}">${esc(l)} <b class="count">${applyFilters(visibleAds(), Object.assign({}, R.f, { status: s })).length}</b></button>`).join('')}</div>
+      <div class="seg shortcuts">${sc.map(([s, l]) => `<button class="${(R.f.status || '') === s ? 'on' : ''}" data-a="repShortcut" data-s="${s}">${esc(l)} <b class="count">${distinctCount(applyFilters(visibleAds(), Object.assign({}, R.f, { status: s })))}</b></button>`).join('')}</div>
       ${filterBar('rep', R.f, { status: STATUSES, tests: true })}
-      <p class="muted mono small">${list.length} ${esc(t('ads'))}${R.f.tFrom || R.f.tTo ? ' · ' + esc(t('test period applied')) : ''}</p>
+      <p class="muted mono small">${distinctCount(list)} ${esc(t('ads'))}${esc(recordsNote({ total: distinctCount(list), records: list.length }))}${R.f.tFrom || R.f.tTo ? ' · ' + esc(t('test period applied')) : ''}</p>
       ${adTable(list, 'rep')}
       ${bulkBar(R.sel, 'rep')}`;
   }
@@ -730,22 +741,24 @@
     const ids = new Set(ads.map((a) => a.id));
     const tests = DB.tests.filter((x) => ids.has(x.ad) && (!F.tFrom || x.start >= F.tFrom) && (!F.tTo || x.start <= F.tTo));
     const m = metrics(tests);
-    const counts = STATUSES.map((s) => [s, ads.filter((a) => a.status === s).length]);
+    const cs = creativeStats(ads);
+    const counts = STATUSES.map((s) => [s, cs.by[s]]);
     const max = Math.max(1, ...counts.map((c) => c[1]));
     const groups = (keyFn, labelFn) => {
       const g = {};
       ads.forEach((a) => { keyFn(a).forEach((k) => { (g[k] = g[k] || []).push(a); }); });
       return Object.entries(g).map(([k, list]) => {
         const set = new Set(list.map((a) => a.id)); const mm = metrics(tests.filter((x) => set.has(x.ad)));
-        const decided = list.filter((a) => ['validated', 'scaling', 'rejected', 'sold_nv', 'sold_rej'].includes(a.status));
-        return { label: labelFn(k), n: list.length, win: list.filter((a) => a.status === 'validated' || a.status === 'scaling').length, rate: decided.length ? list.filter((a) => a.status === 'validated' || a.status === 'scaling').length / decided.length : null, spend: mm.spend, roas: mm.roas };
+        const st = creativeStats(list); const win = st.by.validated + st.by.scaling;
+        const decided = win + st.by.rejected + st.by.sold_nv + st.by.sold_rej;
+        return { label: labelFn(k), n: st.total, win, rate: decided ? win / decided : null, spend: mm.spend, roas: mm.roas };
       }).sort((a, b) => (b.spend || 0) - (a.spend || 0));
     };
     const table = (title, rows) => `<section class="pf-t"><h3>${esc(title)}</h3><div class="tbl-wrap"><table class="tbl"><thead><tr><th></th><th class="r">${esc(t('Ads'))}</th><th class="r">${esc(t('Winners'))}</th><th class="r">${esc(t('Win rate'))}</th><th class="r">${esc(t('Spend'))}</th><th class="r">ROAS</th><th class="spark-h"></th></tr></thead><tbody>${rows.map((r) => `<tr><td class="strong">${esc(r.label)}</td><td class="r mono">${r.n}</td><td class="r mono">${r.win}</td><td class="r mono">${pct(r.rate)}</td><td class="r mono">${money(r.spend)}</td><td class="r mono">${num(r.roas, 2)}</td><td>${roasBar(r.roas)}</td></tr>`).join('')}</tbody></table></div></section>`;
     return `<div class="ph"><div><p class="eyebrow">${esc(t('Operations / Performance'))}</p><h1 class="page-title">${esc(t('Performance'))}</h1></div></div>
       ${filterBar('perf', F, { tests: true })}
       <div class="kgrid">
-        <div class="kpi hl"><span>${esc(t('Total ads'))}</span><b>${ads.length}</b><small>${esc(t('{n} demands', { n: new Set(ads.map((a) => a.offer)).size }))}</small></div>
+        <div class="kpi hl"><span>${esc(t('Total ads'))}</span><b>${cs.total}</b><small>${esc(t('{n} demands', { n: new Set(ads.map((a) => a.offer)).size }) + recordsNote(cs))}</small></div>
         <div class="kpi"><span>${esc(t('Spend'))}</span><b>${money(m.spend)}</b></div><div class="kpi"><span>${esc(t('Revenue'))}</span><b>${money(m.revenue)}</b></div>
         <div class="kpi"><span>ROAS</span><b>${num(m.roas, 2)}</b></div><div class="kpi"><span>CPA</span><b>${money(m.cpa)}</b></div>
         <div class="kpi"><span>${esc(t('Effectiveness'))}</span><b>${pct(m.classified ? m.effective / m.classified : null)}</b><small>${esc(t('{e} of {c} classified', { e: m.effective, c: m.classified }))}</small></div>

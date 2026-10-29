@@ -194,4 +194,5 @@ window.PT = {
   "The link must start with https://": "O link tem que começar com https://",
   "Write the comment or the report.": "Escreva o comentário ou o relatório.",
   'Live operation': 'Operação ao vivo', 'Live now': 'Ao vivo', 'ads live right now': 'anúncios no ar agora', 'Make it rain': 'Fazer chover', 'move the mouse · click anywhere': 'mexa o mouse · clique em qualquer lugar',
+  '{n} records (one per manager)': '{n} registros (um por gestor)',
 };
