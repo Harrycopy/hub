@@ -1,10 +1,14 @@
-# ShippingCaps · Traffic Hub (protótipo)
+# ShippingCaps · Traffic Hub
 
 Versão nova do painel de gestão de tráfego, feita com Claude em HTML, CSS e JavaScript puros, sem Lovable e sem build.
 
 Site: https://harrycopy.github.io/hub/
 
-**É um protótipo navegável com dados de exemplo.** Nada aqui lê ou grava no Hub de produção. Os dados ficam no navegador de quem abre (localStorage) e o botão "Reiniciar demo" volta tudo ao exemplo.
+**Ligado no banco real do Hub** (o mesmo Supabase do Hub do Lovable): mesmo login, mesmas permissões, os mesmos dados. O que alguém muda aqui aparece no Hub e vice-versa. Histórico e avisos continuam sendo gravados pelo próprio banco.
+
+Fica no Hub antigo, com link, o que precisa de servidor: convidar e gerenciar usuários, ler o Drive na hora (a leitura automática de 10 em 10 min continua rodando lá) e Ads por oferta.
+
+Demo com dados de exemplo, sem tocar no banco: https://harrycopy.github.io/hub/?demo
 
 ## O que tem
 
@@ -16,9 +20,9 @@ Site: https://harrycopy.github.io/hub/
 - Entrada do Drive, Ads por oferta, Administração (usuários, catálogo, pastas, integrações).
 - EN/PT no topo, busca rápida com ⌘K, celular.
 
-## Abrir direto como alguém
+## Demo: abrir direto como alguém
 
-`?as=u_kevin&lang=pt` no fim do link abre como o Kevin em português. Perfis: `u_admin`, `u_harry`, `u_kevin`, `u_joao`, `u_matheus`, `u_akshit`, `u_munish`.
+`?demo&as=u_kevin&lang=pt` no fim do link abre como o Kevin em português. Perfis: `u_admin`, `u_harry`, `u_kevin`, `u_joao`, `u_matheus`, `u_akshit`, `u_munish`.
 
 ## Atualizar
 

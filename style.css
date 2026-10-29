@@ -561,3 +561,15 @@ kbd { display: inline-block; padding: 1px 6px; border: 1px solid var(--line2); b
   .muted, .kpi span, .dv-grid span { color: #555; }
   .ss select { color: #111; }
 }
+
+/* banco real: carregando, login */
+.boot { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; color: var(--mute); font: 500 11px var(--fm); letter-spacing: .14em; text-transform: uppercase; }
+.boot .brand-mark { width: 46px; height: 46px; animation: breathe 1.4s ease-in-out infinite; }
+.boot .brand-mark .ic { width: 22px; height: 22px; }
+@keyframes breathe { 50% { opacity: .35; transform: scale(.94); } }
+.empty.boot { border: 0; text-transform: none; letter-spacing: 0; font: 14px var(--ff); }
+.login-f { display: flex; flex-direction: column; gap: 14px; margin: 24px 0 14px; }
+.login-f .merr { padding: 0; }
+.login-f .btn { width: 100%; }
+.auth-links { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 0 0 16px; }
+.row-a .muted { align-self: center; }

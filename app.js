@@ -9,12 +9,16 @@
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* sem armazenamento */ } },
     del(k) { try { localStorage.removeItem(k); } catch (e) { /* idem */ } },
   };
-  let DB = store.get(LS);
-  if (!DB || DB.v !== window.SEED_VERSION) DB = window.buildSeed();
+  // Sem ?demo o site fala com o banco real do Hub; com ?demo usa os dados de exemplo
+  const LIVE = !new URLSearchParams(location.search).has('demo') && window.HubLive ? window.HubLive : null;
+  const emptyDB = () => ({ v: 'live', users: [], niches: [], catalog: [], offers: [], ads: [], tests: [], comments: [], activity: [], notifications: [], sources: [], batches: [], files: [], tasks: [], integrations: [], scans: {} });
+  let DB = LIVE ? emptyDB() : store.get(LS);
+  if (!LIVE && (!DB || DB.v !== window.SEED_VERSION)) DB = window.buildSeed();
   const saved = store.get(LS_UI) || {};
   const UI = {
     lang: saved.lang || ((navigator.language || '').toLowerCase().startsWith('pt') ? 'pt' : 'en'),
-    user: saved.user && DB.users.some((u) => u.id === saved.user) ? saved.user : null,
+    user: !LIVE && saved.user && DB.users.some((u) => u.id === saved.user) ? saved.user : null,
+    boot: !!LIVE, loading: false, denied: false, extras: {},
     pipe: { view: saved.pipeView || 'board', f: {}, sel: new Set(), selectMode: false, last: null },
     rep: { f: {}, sel: new Set(), last: null },
     perf: { f: {} },
@@ -25,10 +29,10 @@
   };
   // ?as=u_kevin&lang=pt abre direto como aquela pessoa (bom para mandar link)
   const qp = new URLSearchParams(location.search);
-  if (qp.get('as') && DB.users.some((u) => u.id === qp.get('as'))) UI.user = qp.get('as');
+  if (!LIVE && qp.get('as') && DB.users.some((u) => u.id === qp.get('as'))) UI.user = qp.get('as');
   if (qp.get('lang') === 'pt' || qp.get('lang') === 'en') UI.lang = qp.get('lang');
-  const commit = () => store.set(LS, DB);
-  const saveUI = () => store.set(LS_UI, { lang: UI.lang, user: UI.user, pipeView: UI.pipe.view });
+  const commit = () => { if (!LIVE) store.set(LS, DB); };
+  const saveUI = () => store.set(LS_UI, { lang: UI.lang, user: LIVE ? null : UI.user, pipeView: UI.pipe.view });
 
   // ---------- utilidades ----------
   const app = document.getElementById('app');
@@ -82,20 +86,62 @@
   const testsOf = (a) => DB.tests.filter((x) => x.ad === a.id);
   const isOverdue = (o) => o.deadline && new Date(o.deadline) < new Date() && DB.ads.some((a) => a.offer === o.id && !a.trashed && PIPE.includes(a.status) && a.status !== 'validated');
 
-  function log(offerId, action, d) { DB.activity.push({ id: uid('l'), offer: offerId, at: now(), actor: UI.user, action, d: d || {} }); }
+  // no modo real, histórico e avisos são gravados pelos triggers do banco
+  function log(offerId, action, d) { if (LIVE) return; DB.activity.push({ id: uid('l'), offer: offerId, at: now(), actor: UI.user, action, d: d || {} }); }
   function notify(userId, offerId, type, d) {
-    if (!userId || userId === UI.user) return;
+    if (LIVE || !userId || userId === UI.user) return;
     DB.notifications.push({ id: uid('n'), user: userId, at: now(), offer: offerId, type, d: d || {}, read: false });
+  }
+
+  // ---------- banco real ----------
+  const errText = (e) => (e && e.code === '42501' ? t('You do not have permission for this.') : (e && (e.message || e.error_description)) || String(e));
+  let reloading = null, reloadTimer = null;
+  async function reload() {
+    if (!LIVE || !LIVE.me) return;
+    if (reloading) return reloading;
+    reloading = (async () => {
+      try {
+        const fresh = await LIVE.load();
+        fresh.comments = DB.comments; fresh.activity = DB.activity;
+        const mine = DB.users.find((u) => u.id === UI.user);
+        if (mine && !fresh.users.some((u) => u.id === mine.id)) fresh.users.push(mine);
+        DB = fresh;
+        const r = route();
+        if (r.name === 'demand' && r.id) await loadExtras(r.id, true);
+        if (!modalRoot.classList.contains('on')) render();
+      } catch (e) { toast(t('Could not refresh: {e}', { e: errText(e) })); }
+      finally { reloading = null; }
+    })();
+    return reloading;
+  }
+  const reloadSoon = (ms) => { clearTimeout(reloadTimer); reloadTimer = setTimeout(reload, ms == null ? 1500 : ms); };
+  async function loadExtras(offerId, quiet) {
+    if (!LIVE) return;
+    const x = await LIVE.offerExtras(offerId);
+    DB.comments = DB.comments.filter((c) => c.offer !== offerId).concat(x.comments);
+    DB.activity = DB.activity.filter((l) => l.offer !== offerId).concat(x.activity);
+    UI.extras[offerId] = true;
+    if (!quiet) render();
+  }
+  // grava no banco em segundo plano; se falhar, avisa e volta ao que está no banco
+  function remote(fn) {
+    if (!LIVE) return;
+    Promise.resolve().then(fn).then((r) => {
+      if (r && r.missing) toast(t('{n} item(s) were not saved: no permission', { n: r.missing }));
+      reloadSoon(r && r.missing ? 200 : 2500);
+    }).catch((e) => { toast(t('Not saved: {e}', { e: errText(e) })); reloadSoon(100); });
+  }
+  // grava e espera, para o que precisa do id do banco (criar demanda, anúncio, teste…)
+  async function remoteWait(fn, okMsg) {
+    try { const r = await fn(); await reload(); if (okMsg) toast(okMsg); return r; } catch (e) { toast(t('Not saved: {e}', { e: errText(e) })); throw e; }
   }
 
   // ---------- filtros ----------
   function visibleAds(opts) {
     opts = opts || {};
     return DB.ads.filter((a) => {
-      if (a.trashed) return !!opts.trash;
-      if (opts.trash) return false;
-      const o = offer(a.offer);
-      return canSee(o);
+      if (!!a.trashed !== !!opts.trash) return false;
+      return canSee(offer(a.offer));
     });
   }
   function applyFilters(list, f, opts) {
@@ -158,11 +204,17 @@
       notify(o.assignee, o.id, 'status', { ad: a.name, to: st });
     });
     commit();
+    if (prev.length) remote(() => LIVE.setStatus(prev.map((p) => p[0]), st, REJ.includes(st) ? reason : undefined));
     return prev;
   }
   function undoStatus(prev) {
     prev.forEach(([id, s, r, c]) => { const a = ad(id); if (a) { log(a.offer, 'ad_status', { ad: a.name, from: a.status, to: s, undo: true }); a.status = s; a.reason = r; a.changed = c; } });
     commit(); render();
+    if (LIVE) {
+      const groups = {};
+      prev.forEach(([id, s, r]) => { const k = s + '|' + (REJ.includes(s) ? r : ''); (groups[k] = groups[k] || { s, r: REJ.includes(s) ? r : undefined, ids: [] }).ids.push(id); });
+      remote(async () => { let missing = 0; for (const g of Object.values(groups)) missing += (await LIVE.setStatus(g.ids, g.s, g.r)).missing; return { missing }; });
+    }
   }
   function changeStatus(ids, st) {
     ids = ids.filter((id) => { const a = ad(id); return a && a.status !== st && canWrite(offer(a.offer)); });
@@ -177,18 +229,21 @@
     const done = [];
     ids.forEach((id) => { const a = ad(id); if (a && canWrite(offer(a.offer)) && !a.trashed) { a.trashPrev = a.status; a.trashed = now(); log(a.offer, 'trashed', { ad: a.name }); done.push(id); } });
     commit(); clearSel();
-    toast(t('{n} ads sent to trash', { n: done.length }), { undo: () => { done.forEach((id) => { const a = ad(id); a.trashed = null; }); commit(); render(); } });
+    if (done.length) remote(() => LIVE.trash(done, true));
+    toast(t('{n} ads sent to trash', { n: done.length }), { undo: () => { done.forEach((id) => { const a = ad(id); a.trashed = null; }); commit(); render(); remote(() => LIVE.trash(done, false)); } });
     render();
   }
   function restoreAds(ids) {
+    // o status não muda enquanto está na lixeira, então tirar da lixeira já volta ao status de antes
     ids.forEach((id) => { const a = ad(id); if (a) { a.trashed = null; if (a.trashPrev) a.status = a.trashPrev; log(a.offer, 'restored', { ad: a.name, to: a.status }); } });
-    commit(); clearSel(); toast(t('{n} ads restored to their previous status', { n: ids.length })); render();
+    commit(); clearSel(); remote(() => LIVE.trash(ids, false)); toast(t('{n} ads restored to their previous status', { n: ids.length })); render();
   }
   function deleteAds(ids) {
     const blocked = ids.filter((id) => DB.tests.some((x) => x.ad === id));
     const ok = ids.filter((id) => !blocked.includes(id));
     DB.ads = DB.ads.filter((a) => !ok.includes(a.id));
     DB.files.forEach((f) => { if (ok.includes(f.ad)) f.ad = null; });
+    if (ok.length) remote(() => LIVE.remove(ok));
     commit(); clearSel();
     toast(t('{n} deleted', { n: ok.length }) + (blocked.length ? ' · ' + t('{n} kept because they have tests', { n: blocked.length }) : ''));
     render();
@@ -254,7 +309,7 @@
   function origin(a) {
     if (!a.origin) return '';
     const s = ad(a.origin);
-    return `<span class="origin" title="${esc(t('Relaunched'))}">${IC.rocket}${esc(t('Relaunch of {ad}', { ad: s ? s.name : '—' }))}${a.targetVsl ? ' → ' + esc(catLabel(a.targetVsl)) : ''}</span>`;
+    return `<span class="origin" title="${esc(t('Relaunched'))}">${IC.rocket}${esc(t('Relaunch of {ad}', { ad: s ? s.name : (a.sourceLabels || []).join(' · ') || '—' }))}${a.targetVsl ? ' → ' + esc(catLabel(a.targetVsl)) : ''}</span>`;
   }
   function selectEl(scope, key, val, opts, ph) {
     return `<label class="fld"><span>${esc(ph)}</span><select data-ch="filter" data-scope="${scope}" data-key="${key}"><option value="">${esc(t('All'))}</option>${opts.map(([v, l]) => `<option value="${esc(v)}"${v === val ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label>`;
@@ -298,7 +353,7 @@
     const nav = [['#/pipeline', 'pipeline', IC.pipe, t('Pipeline')], ['#/reports', 'reports', IC.report, t('Reports')], ['#/performance', 'performance', IC.chart, t('Performance')]];
     if (isAdmin()) nav.push(['#/drive', 'drive', IC.drive, t('Drive Inbox'), newBatches], ['#/ads-per-offer', 'adsPerOffer', IC.grid, t('Ads per offer')], ['#/admin', 'admin', IC.shield, t('Admin')]);
     return `
-    <div class="demo-strip">${IC.lock}<span>${esc(t('Demo environment · sample data · nothing here touches the live Hub'))}</span><button class="link" data-a="resetDemo">${esc(t('Reset demo'))}</button></div>
+    ${LIVE ? '' : `<div class="demo-strip">${IC.lock}<span>${esc(t('Demo environment · sample data · nothing here touches the live Hub'))}</span><button class="link" data-a="resetDemo">${esc(t('Reset demo'))}</button></div>`}
     <header class="top${opts.panel ? ' is-panel' : ''}">
       <div class="top-in">
         <a class="brand" href="#/"><span class="brand-mark">${IC.layers}</span><span class="brand-txt"><b>ShippingCaps</b><small>Traffic Hub</small></span></a>
@@ -315,13 +370,14 @@
     <footer class="foot"><span>SHIPPINGCAPS // TRAFFIC OPERATIONS</span><span>${esc(t('Private environment'))} · ${esc(t('built with Claude'))}</span></footer>`;
   }
   const initials = (n) => n.split(' ').map((x) => x[0]).slice(0, 2).join('').toUpperCase();
-  const roleLabel = (r) => (r === 'admin' ? t('Administrator') : t('Traffic manager'));
+  const roleLabel = (r) => (r === 'admin' ? t('Administrator') : r === 'gestor' ? t('Traffic manager') : t('No access'));
   function notifPanel() {
     const list = DB.notifications.filter((n) => n.user === UI.user).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 50);
     return `<div class="pop notif"><div class="pop-h"><b>${esc(t('Notifications'))}</b>${list.some((n) => !n.read) ? `<button class="link" data-a="readAll">${esc(t('Mark all as read'))}</button>` : ''}</div>
       <div class="pop-b">${list.length ? list.map((n) => `<button class="nt${n.read ? '' : ' unread'}" data-a="openNotif" data-id="${n.id}"><span>${esc(notifText(n))}</span><small>${esc(ago(n.at))}</small></button>`).join('') : `<p class="empty-s">${esc(t('Nothing new.'))}</p>`}</div></div>`;
   }
   function notifText(n) {
+    if (n.title) return n.title.replace(/Aprovados/g, sl('test')) + (n.body ? ' · ' + n.body : '');
     const o = offer(n.offer) || { number: '—' };
     const d = n.d || {};
     return {
@@ -333,6 +389,7 @@
     }[n.type] || n.type;
   }
   function userMenu() {
+    if (LIVE) return `<div class="pop menu"><div class="pop-h"><b>${esc(me().name)}</b></div><div class="pop-b"><p class="empty-s" style="text-align:left;padding:6px 9px">${esc(me().email || '')} · ${esc(roleLabel(me().role))}</p><a class="mi" href="${window.HUB_URL}" target="_blank" rel="noopener">${IC.ext}<span>${esc(t('Open the old Hub'))}</span></a></div><div class="pop-f"><button class="mi" data-a="signOut">${IC.back}<span>${esc(t('Sign out'))}</span></button></div></div>`;
     return `<div class="pop menu"><div class="pop-h"><b>${esc(t('View the demo as'))}</b></div><div class="pop-b">
       ${DB.users.filter((u) => u.active).map((u) => `<button class="mi${u.id === UI.user ? ' on' : ''}" data-a="switchUser" data-id="${u.id}"><span class="avatar sm">${esc(initials(u.name))}</span><span>${esc(u.name)}<small>${esc(roleLabel(u.role))}</small></span>${u.id === UI.user ? IC.check : ''}</button>`).join('')}
       </div><div class="pop-f"><button class="mi" data-a="signOut">${IC.back}<span>${esc(t('Sign out'))}</span></button></div></div>`;
@@ -352,15 +409,29 @@
         <p class="auth-foot">${IC.lock}${esc(t('Private environment / ShippingCaps'))}</p>
       </section>
       <section class="auth-form">
-        <div class="auth-card">
+        ${LIVE ? `<form class="auth-card" data-form="login" novalidate>
+          <span class="auth-ic">${IC.lock}</span>
+          <p class="eyebrow">${esc(t('Restricted access'))}</p>
+          <h2>${esc(t('Sign in to the workspace'))}</h2>
+          <p class="muted">${esc(t('Same email and password you use in the Hub.'))}</p>
+          <div class="login-f">
+            <label class="mf"><span>Email</span><input name="email" type="email" autocomplete="username" required></label>
+            <label class="mf"><span>${esc(t('Password'))}</span><input name="password" type="password" autocomplete="current-password" required></label>
+            <p class="merr" role="alert"></p>
+            <button class="btn primary big">${esc(t('Sign in'))}</button>
+          </div>
+          <p class="auth-links"><a class="link" href="${window.HUB_URL}/esqueci-senha" target="_blank" rel="noopener">${esc(t('Forgot password'))}</a><a class="link" href="?demo">${esc(t('See the demo with sample data'))}</a></p>
+          <p class="auth-note">${esc(t('Access restricted to invited users. New users are invited in the Hub.'))}</p>
+          <button type="button" class="tool lang solo" data-a="lang"><b class="${UI.lang === 'en' ? 'on' : ''}">EN</b><b class="${UI.lang === 'pt' ? 'on' : ''}">PT</b></button>
+        </form>` : `<div class="auth-card">
           <span class="auth-ic">${IC.lock}</span>
           <p class="eyebrow">${esc(t('Demo access'))}</p>
           <h2>${esc(t('Choose who you are'))}</h2>
           <p class="muted">${esc(t('This is the prototype. Pick a profile to see exactly what that person sees. No password, no real data.'))}</p>
           <div class="who">${DB.users.filter((u) => u.active).map((u) => `<button class="who-b" data-a="login" data-id="${u.id}"><span class="avatar">${esc(initials(u.name))}</span><span><b>${esc(u.name)}</b><small>${esc(roleLabel(u.role))} · ${esc(t('{n} demands', { n: DB.offers.filter((o) => u.role === 'admin' || o.assignee === u.id).length }))}</small></span>${IC.back.replace('class="ic ', 'class="ic flip ')}</button>`).join('')}</div>
-          <p class="auth-note">${esc(t('In the connected version this screen becomes email + password, invite only.'))}</p>
+          <p class="auth-note">${esc(t('Demo with sample data.'))} <a class="link" href="./">${esc(t('Go to the real Hub sign-in'))}</a></p>
           <button class="tool lang solo" data-a="lang"><b class="${UI.lang === 'en' ? 'on' : ''}">EN</b><b class="${UI.lang === 'pt' ? 'on' : ''}">PT</b></button>
-        </div>
+        </div>`}
       </section>
     </div>`;
   }
@@ -586,6 +657,19 @@
       comment_added: t('commented'), report_added: t('posted a report'), offer_edited: t('edited the demand'), archived: t('archived the demand'), unarchived: t('restored the demand'),
       ad_created: t('added ad {ad}', { ad: d.ad }), test_added: t('recorded a test on {ad}', { ad: d.ad }), test_deleted: t('deleted a test on {ad}', { ad: d.ad }),
       drive_linked: t('linked Drive batch {b} ({n} ads)', { b: d.batch, n: d.n }),
+      // nomes que os triggers do banco gravam
+      status_anuncio_alterado: t('moved {ad}: {f} → {to}', { ad: d.nome || t('ad'), f: l.from ? sl(l.from) : '—', to: l.to ? sl(l.to) : '—' }),
+      status_alterado: t('changed the demand status: {f} → {to}', { f: l.from ? sl(l.from) : '—', to: l.to ? sl(l.to) : '—' }),
+      motivo_rejeicao_alterado: t('set rejection reason of {ad}: "{r}"', { ad: d.nome || t('ad'), r: d.motivo || '—' }),
+      anuncio_relancado: t('relaunched {ad} on {v}', { ad: d.nome || 'AD', v: d.destino_vsl || '—' }),
+      lote_drive_vinculado: t('linked Drive batch {b} ({n} ads)', { b: d.lote || '—', n: d.anuncios_criados || 0 }),
+      ads_importados_drive: t('{n} new ad(s) arrived from Drive ({b})', { n: d.anuncios_criados || 0, b: d.lote || t('list') }),
+      responsavel_alterado: t('changed the manager from {a} to {b}', { a: (user(d.de) || {}).name || '—', b: (user(d.para) || {}).name || '—' }),
+      oferta_criada: t('created the demand'), oferta_editada: t('edited the demand'), oferta_arquivada: t('archived the demand'), oferta_restaurada: t('restored the demand'),
+      vsls_alteradas: t('changed the demand VSLs'), produtos_alterados: t('changed the demand products'), mecanismos_alterados: t('changed the demand mechanisms'),
+      anuncio_cadastrado: t('added ad {ad}', { ad: d.nome || '' }), anuncio_editado: t('edited ad {ad}', { ad: d.nome || '' }), anuncio_removido: t('removed ad {ad}', { ad: d.nome || '' }),
+      teste_registrado: t('recorded a test'), teste_atualizado: t('updated a test'), teste_classificado: t('classified a test'), teste_removido: t('removed a test'),
+      comentario_adicionado: t('commented'), relatorio_registrado: t('posted a report'), comentario_editado: t('edited a comment'),
     }[l.action];
     return s || l.action;
   }
@@ -662,7 +746,7 @@
     const selN = D.sel.size;
     return `<div class="ph"><div><p class="eyebrow">${esc(t('Admin / Drive Inbox'))}</p><h1 class="page-title">${esc(t('Drive Inbox'))}</h1>
       <p class="muted">${esc(t('Every new batch dropped into an "EDIÇÃO - ADS" folder shows up here. Turn it into a demand in one click.'))}</p></div>
-      <div class="ph-a"><button class="btn primary" data-a="scan">${IC.refresh}${esc(t('Read Drive now'))}</button></div></div>
+      <div class="ph-a"><button class="btn primary" data-a="scan">${LIVE ? IC.ext : IC.refresh}${esc(LIVE ? t('Read Drive now (in the Hub)') : t('Read Drive now'))}</button></div></div>
       <div class="scanline"><span>${IC.clock}${esc(t('Last automatic scan'))}: <b>${esc(ago(DB.scans.auto))}</b></span>${DB.scans.manual ? `<span>${esc(t('Last manual scan'))}: <b>${esc(ago(DB.scans.manual.at))}</b> · ${esc(t('{b} new batches, {f} files', { b: DB.scans.manual.b, f: DB.scans.manual.f }))}</span>` : ''}<span class="muted">${esc(t('Incremental every 10 min · full read every 24 h'))}</span></div>
       <div class="viewbar"><div class="seg">${tabs.map(([k, l]) => `<button class="${D.tab === k ? 'on' : ''}" data-a="driveTab" data-v="${k}">${esc(l)} <b class="count">${DB.batches.filter((b) => b.status === k && !b.removed).length}</b></button>`).join('')}</div></div>
       ${bySource.length ? bySource.map(([s, list]) => `<section class="src"><header><div><b>${esc(catLabel(s.product))}</b><small>${esc(s.path)}</small>${s.error ? `<small class="err">${esc(s.error)}</small>` : ''}</div><button class="link" data-a="selFolder" data-id="${s.id}">${esc(t('Select all in this folder'))}</button></header>${list.map(batchCard).join('')}</section>`).join('') : `<div class="empty"><b>${esc(t('Nothing here.'))}</b></div>`}
@@ -672,6 +756,9 @@
   // ---------- Ads per offer ----------
   function viewAdsPerOffer() {
     if (!isAdmin()) return denied();
+    if (LIVE) return `<div class="ph"><div><p class="eyebrow">${esc(t('Admin / Ads per offer'))}</p><h1 class="page-title">${esc(t('Ads per offer'))}</h1>
+      <p class="muted">${esc(t('This count reads ClickUp and the COPY ADS docs on the server, so for now it stays in the old Hub.'))}</p></div></div>
+      <div class="empty"><b>${esc(t('Open it in the Hub'))}</b><a class="btn primary" href="${window.HUB_URL}/ads-por-oferta" target="_blank" rel="noopener">${IC.ext}${esc(t('Ads per offer in the Hub'))}</a></div>`;
     const ST = [['copy', 'Copywriter'], ['editing', t('Editing')], ['dev', 'Dev'], ['traffic', t('Traffic')], ['approved', t('Approved')]];
     const total = DB.tasks.reduce((s, x) => s + x.editing, 0);
     return `<div class="ph"><div><p class="eyebrow">${esc(t('Admin / Ads per offer'))}</p><h1 class="page-title">${esc(t('Ads per offer'))}</h1>
@@ -701,7 +788,7 @@
     } else if (tab === 'integrations') {
       c = `<p class="muted">${esc(t('Today every metric is typed by hand. These connections would pull spend, clicks and revenue automatically.'))}</p><div class="ints">${DB.integrations.map((x) => `<div class="int"><span class="int-ic">${esc(x.platform.slice(0, 2))}</span><b>${esc(x.platform)}</b><small>${esc(t('Not connected'))}</small><button class="btn ghost xs" disabled>${esc(t('Coming soon'))}</button></div>`).join('')}</div>`;
     } else {
-      c = `<div class="row-a"><button class="btn primary sm" data-a="invite">${IC.plus}${esc(t('Invite user'))}</button></div><div class="tbl-wrap"><table class="tbl"><thead><tr><th>${esc(t('Name'))}</th><th>Email</th><th>${esc(t('Role'))}</th><th>${esc(t('Demands'))}</th><th>${esc(t('Last access'))}</th><th>${esc(t('Access'))}</th><th></th></tr></thead><tbody>
+      c = `<div class="row-a"><button class="btn primary sm" data-a="invite">${LIVE ? IC.ext : IC.plus}${esc(t('Invite user'))}</button>${LIVE ? `<span class="muted small">${esc(t('Invites, roles and access need the server, so they open in the Hub.'))}</span>` : ''}</div><div class="tbl-wrap"><table class="tbl"><thead><tr><th>${esc(t('Name'))}</th><th>Email</th><th>${esc(t('Role'))}</th><th>${esc(t('Demands'))}</th><th>${esc(t('Last access'))}</th><th>${esc(t('Access'))}</th><th></th></tr></thead><tbody>
         ${DB.users.map((u) => { const self = u.id === UI.user; return `<tr class="${u.active ? '' : 'off'}"><td><span class="avatar sm">${esc(initials(u.name))}</span> <b>${esc(u.name)}</b>${self ? ` <span class="tag">${esc(t('you'))}</span>` : ''}</td><td class="muted">${esc(u.email)}</td><td><select data-ch="role" data-id="${u.id}"${self ? ' disabled' : ''}><option value="admin"${u.role === 'admin' ? ' selected' : ''}>${esc(t('Administrator'))}</option><option value="gestor"${u.role === 'gestor' ? ' selected' : ''}>${esc(t('Traffic manager'))}</option></select></td><td class="mono">${DB.offers.filter((o) => o.assignee === u.id).length}</td><td class="muted">${u.last ? esc(ago(u.last)) : esc(t('never signed in'))}</td><td>${u.active ? `<span class="tag green">${esc(t('Active'))}</span>` : `<span class="tag">${esc(t('Inactive'))}</span>`}</td><td class="r">${u.last ? '' : `<button class="link" data-a="resend" data-id="${u.id}">${esc(t('Resend invite'))}</button> `}<button class="link" data-a="toggleUser" data-id="${u.id}"${self ? ' disabled' : ''}>${esc(u.active ? t('Deactivate') : t('Activate'))}</button></td></tr>`; }).join('')}
       </tbody></table></div>`;
     }
@@ -734,7 +821,7 @@
       const reason = (fd.get('reason') || '').trim();
       if (!reason) return mErr(t('Write the reason.'));
       if (current != null) {
-        const a = ad(ids[0]); log(a.offer, 'reason', { ad: a.name, reason }); a.reason = reason; commit(); closeModal(); toast(t('Reason saved')); return render();
+        const a = ad(ids[0]); log(a.offer, 'reason', { ad: a.name, reason }); a.reason = reason; commit(); closeModal(); remote(() => LIVE.setReason(a.id, reason)); toast(t('Reason saved')); return render();
       }
       const prev = setStatus(ids, st, reason);
       closeModal(); clearSel();
@@ -762,6 +849,18 @@
       if (!/^https:\/\//.test(d.drive)) return mErr(t('The Drive link must start with https://'));
       if (!d.products.length || !d.vsls.length || !d.mechanisms.length) return mErr(t('Pick at least one product, one VSL and one mechanism.'));
       if (!d.niche || !d.assignee) return mErr(t('Pick the niche and the manager.'));
+      if (LIVE) {
+        const btn = modalRoot.querySelector('footer .btn.primary'); btn.disabled = true;
+        return (async () => {
+          try {
+            const saved = await LIVE.saveOffer(o ? o.id : null, d);
+            if (after) await after({ id: saved.id, number: saved.number });
+            closeModal(); await reload();
+            toast(o ? t('Demand saved') : t('Demand #{n} created', { n: saved.number }));
+            if (!o && !after) go('#/demand/' + saved.id);
+          } catch (e) { btn.disabled = false; mErr(t('Not saved: {e}', { e: errText(e) })); }
+        })();
+      }
       let target = o;
       if (o) {
         if (o.assignee !== d.assignee) { log(o.id, 'assigned', { to: d.assignee }); notify(d.assignee, o.id, 'assigned'); }
@@ -784,6 +883,16 @@
       ${field(t('Managers (optional)'), checks('mgrs', DB.users.filter((u) => u.active && u.role === 'gestor').map((u) => [u.id, u.name]), []), 'full')}`, (fd) => {
       const vs = fd.getAll('vsls'); const prod = fd.get('product'); const mgrs = fd.getAll('mgrs');
       if (!vs.length) return mErr(t('Pick at least one target VSL.'));
+      if (LIVE) {
+        const btn = modalRoot.querySelector('footer .btn.primary'); btn.disabled = true;
+        return (async () => {
+          try {
+            // um pedido por gestor, cada um com a sua chave de idempotência (igual ao Hub)
+            for (const m of (mgrs.length ? mgrs : [null])) await LIVE.relaunch(ads.map((a) => a.id), vs, prod || null, m);
+            closeModal(); clearSel(); await reload(); toast(t('Relaunch done · new ads are in Test'));
+          } catch (e) { btn.disabled = false; mErr(t('Not saved: {e}', { e: errText(e) })); }
+        })();
+      }
       let created = 0, skipped = 0;
       ads.forEach((src) => {
         const so = offer(src.offer);
@@ -816,6 +925,19 @@
       ${field(t('Add mechanism'), `<select name="mech">${options(activeOpts('mechanism'), '', t('Keep each one'))}</select>`)}
       ${field(t('Add VSL'), `<select name="vsl">${options(activeOpts('vsl'), '', t('Keep each one'))}</select>`)}`, (fd) => {
       const a = fd.get('assignee'), dl = fd.get('deadline'), m = fd.get('mech'), v = fd.get('vsl');
+      if (LIVE) {
+        const btn = modalRoot.querySelector('footer .btn.primary'); btn.disabled = true;
+        return (async () => {
+          let done = 0;
+          try {
+            for (const o of os) {
+              const d = { name: o.name, drive: o.drive, products: o.products, vsls: v && !o.vsls.includes(v) ? o.vsls.concat(v) : o.vsls, mechanisms: m && !o.mechanisms.includes(m) ? o.mechanisms.concat(m) : o.mechanisms, channel: o.channel, niche: o.niche, assignee: a || o.assignee, deadline: dl || o.deadline, description: o.description, notes: o.notes };
+              await LIVE.saveOffer(o.id, d); done++;
+            }
+            closeModal(); clearSel(); await reload(); toast(t('{n} demands updated', { n: done }));
+          } catch (e) { btn.disabled = false; mErr(t('{n} saved, then it stopped: {e}', { n: done, e: errText(e) })); }
+        })();
+      }
       os.forEach((o) => {
         if (a && o.assignee !== a) { o.assignee = a; log(o.id, 'assigned', { to: a }); notify(a, o.id, 'assigned'); }
         if (dl) o.deadline = dl + 'T23:59:00';
@@ -845,6 +967,10 @@
       if (x.end && x.end < x.start) return mErr(t('End date is before the start.'));
       if (x.cls && !x.end) return mErr(t('Only finished tests can be classified. Add the end date.'));
       if (x.clicks != null && x.impressions != null && x.clicks > x.impressions) return mErr(t('Clicks are higher than impressions.'));
+      if (LIVE) {
+        const btn = modalRoot.querySelector('footer .btn.primary'); btn.disabled = true;
+        return LIVE.insertTest(x).then(async () => { UI.openAds.add(a.id); closeModal(); await reload(); toast(t('Test recorded')); }).catch((e) => { btn.disabled = false; mErr(t('Not saved: {e}', { e: errText(e) })); });
+      }
       DB.tests.push(x); log(a.offer, 'test_added', { ad: a.name }); UI.openAds.add(a.id);
       commit(); closeModal(); toast(t('Test recorded')); render();
     }, { wide: true, ok: t('Save test') });
@@ -918,7 +1044,8 @@
 
   // ---------- Drive: ações ----------
   function linkBatch(b, o) {
-    const fs = DB.files.filter((f) => f.batch === b.id && !f.removed && !f.ad);
+    if (LIVE) return LIVE.linkBatch(b.id, o.id);
+    const fs =DB.files.filter((f) => f.batch === b.id && !f.removed && !f.ad);
     fs.forEach((f) => {
       const a = { id: uid('a'), offer: o.id, name: f.name.replace(/\.[^.]+$/, ''), channel: o.channel, link: 'https://drive.google.com/file/d/' + f.id + '/view', status: 'test', changed: now(), reason: '', created: now(), trashed: null, trashPrev: null, origin: null, targetVsl: null, targetProducts: null };
       DB.ads.push(a); f.ad = a.id;
@@ -930,7 +1057,7 @@
   }
   function batchDefaults(b) {
     const s = DB.sources.find((x) => x.id === b.source);
-    return { name: catLabel(s.product) + ' — ' + b.name, drive: 'https://drive.google.com/drive/folders/demo-' + b.id, products: [s.product], niche: s.niche, channel: s.channel, vsls: [], mechanisms: [] };
+    return { name: catLabel(s.product) + ' — ' + b.name, drive: 'https://drive.google.com/drive/folders/' + (b.folder || 'demo-' + b.id), products: s.product ? [s.product] : [], niche: s.niche || '', channel: s.channel || 'c_meta', vsls: [], mechanisms: [] };
   }
 
   // ---------- render ----------
@@ -938,8 +1065,11 @@
     UI.bellOpen = UI.bellOpen && !!UI.user; UI.menuOpen = UI.menuOpen && !!UI.user;
     document.documentElement.lang = UI.lang === 'pt' ? 'pt-BR' : 'en';
     const focus = document.activeElement && document.activeElement.id ? { id: document.activeElement.id, s: document.activeElement.selectionStart } : null;
+    if (UI.boot) { app.innerHTML = `<div class="boot"><span class="brand-mark">${IC.layers}</span><p>${esc(t('Loading the operation…'))}</p></div>`; return; }
     if (!UI.user) { app.innerHTML = viewLogin(); document.title = 'Traffic Hub · ' + t('Sign in'); return; }
+    if (UI.denied) { app.innerHTML = `<div class="empty big boot"><b>${esc(t('Access not granted'))}</b><p class="muted">${esc(t('Ask the workspace administrator to grant access.'))}</p><button class="btn ghost" data-a="signOut">${esc(t('Sign out'))}</button></div>`; return; }
     const r = route();
+    if (LIVE && r.name === 'demand' && r.id && !UI.extras[r.id] && offer(r.id)) { UI.extras[r.id] = 'loading'; loadExtras(r.id).catch((e) => { UI.extras[r.id] = false; toast(errText(e)); }); }
     let body, title;
     switch (r.name) {
       case 'panel': body = shell(viewPanel(), { panel: true }); title = t('Panel'); break;
@@ -960,13 +1090,13 @@
   // ---------- eventos ----------
   const A = {
     login: (el) => { UI.user = el.dataset.id; saveUI(); go('#/'); },
-    signOut: () => { UI.user = null; UI.menuOpen = false; saveUI(); render(); },
+    signOut: async () => { UI.menuOpen = false; if (LIVE) { if (stopListen) stopListen(); stopListen = null; await LIVE.signOut(); DB = emptyDB(); UI.extras = {}; } UI.user = null; saveUI(); render(); },
     switchUser: (el) => { UI.user = el.dataset.id; UI.menuOpen = false; saveUI(); clearSel(); toast(t('Now viewing as {n}', { n: me().name })); render(); },
     lang: () => { UI.lang = UI.lang === 'pt' ? 'en' : 'pt'; saveUI(); render(); },
     bell: () => { UI.bellOpen = !UI.bellOpen; UI.menuOpen = false; render(); },
     menu: () => { UI.menuOpen = !UI.menuOpen; UI.bellOpen = false; render(); },
-    readAll: () => { DB.notifications.forEach((n) => { if (n.user === UI.user) n.read = true; }); commit(); render(); },
-    openNotif: (el) => { const n = DB.notifications.find((x) => x.id === el.dataset.id); n.read = true; commit(); UI.bellOpen = false; go('#/demand/' + n.offer); },
+    readAll: () => { DB.notifications.forEach((n) => { if (n.user === UI.user) n.read = true; }); commit(); remote(() => LIVE.readNotifications()); render(); },
+    openNotif: (el) => { const n = DB.notifications.find((x) => x.id === el.dataset.id); if (!n.read) remote(() => LIVE.readNotifications(n.id)); n.read = true; commit(); UI.bellOpen = false; if (n.offer) go('#/demand/' + n.offer); else render(); },
     resetDemo: () => { if (!confirm(t('Reset all demo data to the original sample?'))) return; store.del(LS); DB = window.buildSeed(); commit(); clearSel(); toast(t('Demo data reset')); render(); },
     palette: () => palette(),
     closeModal: () => closeModal(),
@@ -984,7 +1114,7 @@
     deleteForever: () => { const ids = [...UI.pipe.sel]; openModal(t('Delete permanently'), `<p>${esc(t('{n} ad(s) will be deleted for good. Ads that already have tests are kept.', { n: ids.length }))}</p>`, () => { closeModal(); deleteAds(ids); }, { danger: true, ok: t('Delete') }); },
     newOffer: () => offerModal(null),
     editOffer: (el) => offerModal(offer(el.dataset.id)),
-    archive: (el) => { const o = offer(el.dataset.id); o.archived = o.archived ? null : now(); log(o.id, o.archived ? 'archived' : 'unarchived'); commit(); toast(o.archived ? t('Demand archived') : t('Demand restored')); render(); },
+    archive: (el) => { const o = offer(el.dataset.id); o.archived = o.archived ? null : now(); log(o.id, o.archived ? 'archived' : 'unarchived'); commit(); remote(() => LIVE.archive(o.id, !!o.archived)); toast(o.archived ? t('Demand archived') : t('Demand restored')); render(); },
     csvOffer: (el) => csvOffer(offer(el.dataset.id)),
     csvAll: () => csvAll(),
     print: () => window.print(),
@@ -992,11 +1122,16 @@
     newAd: (el) => { const o = offer(el.dataset.id); openModal(t('New ad'), `${field(t('Name (file name without extension)'), '<input name="name" required>')}${field(t('Channel'), `<select name="channel">${options(activeOpts('channel'), o.channel)}</select>`)}${field(t('Link'), '<input name="link" type="url" placeholder="https://drive.google.com/file/d/…">')}`, (fd) => {
       const name = (fd.get('name') || '').trim(); if (!name) return mErr(t('Give the ad a name.'));
       if (DB.ads.some((a) => a.offer === o.id && a.name.toLowerCase() === name.toLowerCase())) return mErr(t('This demand already has an ad with that name.'));
+      if (LIVE) return LIVE.insertAd(o.id, name, fd.get('channel'), (fd.get('link') || '').trim()).then(async () => { closeModal(); await reload(); toast(t('Ad created in Test')); }).catch((e) => mErr(t('Not saved: {e}', { e: errText(e) })));
       DB.ads.push({ id: uid('a'), offer: o.id, name, channel: fd.get('channel'), link: (fd.get('link') || '').trim() || o.drive, status: 'test', changed: now(), reason: '', created: now(), trashed: null, trashPrev: null, origin: null, targetVsl: null, targetProducts: null });
       log(o.id, 'ad_created', { ad: name }); commit(); closeModal(); toast(t('Ad created in Test')); render();
     }); },
     newTest: (el) => testModal(ad(el.dataset.id)),
-    delTest: (el) => { const x = DB.tests.find((y) => y.id === el.dataset.id); DB.tests = DB.tests.filter((y) => y !== x); log(x.offer, 'test_deleted', { ad: (ad(x.ad) || {}).name }); commit(); toast(t('Test deleted'), { undo: () => { DB.tests.push(x); commit(); render(); } }); render(); },
+    delTest: (el) => {
+      const x = DB.tests.find((y) => y.id === el.dataset.id);
+      if (LIVE) return openModal(t('Delete test'), `<p>${esc(t('This test will be deleted from the real database.'))}</p>`, () => { DB.tests = DB.tests.filter((y) => y !== x); closeModal(); render(); remote(() => LIVE.deleteTest(x.id)); toast(t('Test deleted')); }, { danger: true, ok: t('Delete') });
+      DB.tests = DB.tests.filter((y) => y !== x); log(x.offer, 'test_deleted', { ad: (ad(x.ad) || {}).name }); commit(); toast(t('Test deleted'), { undo: () => { DB.tests.push(x); commit(); render(); } }); render();
+    },
     editReason: (el) => { const a = ad(el.dataset.id); reasonModal([a.id], a.status, a.reason || ''); },
     reply: (el) => { UI.replyTo = UI.replyTo === el.dataset.id ? null : el.dataset.id; render(); },
     repShortcut: (el) => { UI.rep.f.status = el.dataset.s || ''; render(); },
@@ -1004,7 +1139,8 @@
     driveTab: (el) => { UI.drive.tab = el.dataset.v; UI.drive.sel.clear(); render(); },
     selFolder: (el) => { DB.batches.filter((b) => b.source === el.dataset.id && b.status === UI.drive.tab && !b.removed).forEach((b) => UI.drive.sel.add(b.id)); render(); },
     scan: () => {
-      const s = DB.sources.filter((x) => x.active)[Math.floor(Math.random() * DB.sources.filter((x) => x.active).length)];
+      if (LIVE) return window.open(window.HUB_URL + '/entrada-drive', '_blank', 'noopener');
+      const s =DB.sources.filter((x) => x.active)[Math.floor(Math.random() * DB.sources.filter((x) => x.active).length)];
       const p = cat(s.product); const nf = 3 + Math.floor(Math.random() * 6);
       const b = { id: uid('b'), source: s.id, name: 'LOTE ' + String(DB.batches.filter((x) => x.source === s.id).length + 1).padStart(2, '0') + ' - ' + new Date().toISOString().slice(5, 10), status: 'new', reason: null, offer: null, removed: null, arrived: now() };
       DB.batches.push(b);
@@ -1012,18 +1148,19 @@
       DB.scans.manual = { at: now(), b: 1, f: nf }; s.lastScan = now(); s.error = '';
       UI.drive.tab = 'new'; commit(); toast(t('Scan finished · 1 new batch, {n} files', { n: nf })); render();
     },
-    batchCreate: (el) => { const b = DB.batches.find((x) => x.id === el.dataset.id); offerModal(null, batchDefaults(b), (o) => { const n = linkBatch(b, o); setTimeout(() => toast(t('{n} ads created in Test', { n })), 50); }); },
+    batchCreate: (el) => { const b = DB.batches.find((x) => x.id === el.dataset.id); offerModal(null, batchDefaults(b), (o) => { if (LIVE) return linkBatch(b, o); const n = linkBatch(b, o); setTimeout(() => toast(t('{n} ads created in Test', { n })), 50); }); },
     batchLink: (el) => {
       const b = DB.batches.find((x) => x.id === el.dataset.id);
       openModal(t('Link {b} to a demand', { b: b.name }), field(t('Demand'), `<select name="offer" required>${options(DB.offers.filter((o) => !o.archived).map((o) => [o.id, '#' + o.number + ' ' + o.name]), '', t('Choose'))}</select>`), (fd) => {
         const o = offer(fd.get('offer')); if (!o) return mErr(t('Choose a demand.'));
+        if (LIVE) return linkBatch(b, o).then(async () => { closeModal(); await reload(); toast(t('Batch linked to #{n}', { n: o.number })); }).catch((e) => mErr(t('Not saved: {e}', { e: errText(e) })));
         const n = linkBatch(b, o); commit(); closeModal(); toast(t('{n} ads created in Test', { n })); render();
       }, { ok: t('Link') });
     },
-    batchIgnore: (el) => { const b = DB.batches.find((x) => x.id === el.dataset.id); b.status = 'ignored'; b.reason = 'manual'; commit(); toast(t('Batch ignored'), { undo: () => { b.status = 'new'; b.reason = null; commit(); render(); } }); render(); },
-    batchRestore: (el) => { const b = DB.batches.find((x) => x.id === el.dataset.id); b.status = b.offer ? 'linked' : 'new'; b.reason = null; commit(); toast(t('Batch restored')); render(); },
-    batchIgnoreMany: () => { const ids = [...UI.drive.sel]; ids.forEach((id) => { const b = DB.batches.find((x) => x.id === id); if (b.status === 'new' && !b.offer) { b.status = 'ignored'; b.reason = 'manual'; } }); commit(); clearSel(); toast(t('{n} batches ignored', { n: ids.length })); render(); },
-    batchRestoreMany: () => { const ids = [...UI.drive.sel]; ids.forEach((id) => { const b = DB.batches.find((x) => x.id === id); b.status = b.offer ? 'linked' : 'new'; b.reason = null; }); commit(); clearSel(); toast(t('{n} batches restored', { n: ids.length })); render(); },
+    batchIgnore: (el) => { const b = DB.batches.find((x) => x.id === el.dataset.id); b.status = 'ignored'; b.reason = 'manual'; commit(); remote(() => LIVE.ignoreBatches([b.id])); toast(t('Batch ignored'), { undo: () => { b.status = 'new'; b.reason = null; commit(); render(); remote(() => LIVE.restoreBatches([b.id])); } }); render(); },
+    batchRestore: (el) => { const b = DB.batches.find((x) => x.id === el.dataset.id); b.status = b.offer ? 'linked' : 'new'; b.reason = null; commit(); remote(() => LIVE.restoreBatches([b.id])); toast(t('Batch restored')); render(); },
+    batchIgnoreMany: () => { const ids = [...UI.drive.sel].filter((id) => { const b = DB.batches.find((x) => x.id === id); return b.status === 'new' && !b.offer; }); ids.forEach((id) => { const b = DB.batches.find((x) => x.id === id); b.status = 'ignored'; b.reason = 'manual'; }); commit(); clearSel(); remote(() => LIVE.ignoreBatches(ids)); toast(t('{n} batches ignored', { n: ids.length })); render(); },
+    batchRestoreMany: () => { const ids = [...UI.drive.sel]; ids.forEach((id) => { const b = DB.batches.find((x) => x.id === id); b.status = b.offer ? 'linked' : 'new'; b.reason = null; }); commit(); clearSel(); remote(() => LIVE.restoreBatches(ids)); toast(t('{n} batches restored', { n: ids.length })); render(); },
     batchCreateMany: () => {
       const bs = [...UI.drive.sel].map((id) => DB.batches.find((x) => x.id === id)).filter((b) => b.status === 'new');
       openModal(t('Create {n} demands', { n: bs.length }), `<p class="muted">${esc(t('One demand per batch, named "Product — batch". Shared fields below.'))}</p>
@@ -1031,6 +1168,22 @@
         ${field(t('Manager'), `<select name="assignee" required>${options(mgrOpts(), '', t('Choose'))}</select>`)}${field(t('Deadline'), '<input type="date" name="deadline">')}`, (fd) => {
         const vs = fd.getAll('vsls'), ms = fd.getAll('mechanisms'), as = fd.get('assignee');
         if (!vs.length || !ms.length || !as) return mErr(t('Pick VSL, mechanism and manager.'));
+        if (LIVE) {
+          const btn = modalRoot.querySelector('footer .btn.primary'); btn.disabled = true;
+          return (async () => {
+            let done = 0;
+            try {
+              // uma demanda por lote; se cair no meio, o que já foi criado fica e o resto dá para refazer
+              for (const b of bs) {
+                const d = Object.assign(batchDefaults(b), { vsls: vs, mechanisms: ms, assignee: as, deadline: fd.get('deadline') || null, description: '', notes: '' });
+                if (!d.products.length || !d.niche) throw new Error(t('Folder "{f}" has no default product or niche. Create this one alone.', { f: b.name }));
+                const saved = await LIVE.saveOffer(null, d);
+                await LIVE.linkBatch(b.id, saved.id); done++;
+              }
+              closeModal(); clearSel(); await reload(); toast(t('{n} demands created', { n: done }));
+            } catch (e) { btn.disabled = false; await reload(); mErr(t('{n} saved, then it stopped: {e}', { n: done, e: errText(e) })); }
+          })();
+        }
         let total = 0;
         bs.forEach((b) => {
           const d = batchDefaults(b);
@@ -1042,28 +1195,35 @@
         commit(); closeModal(); clearSel(); toast(t('{n} demands created · {a} ads in Test', { n: bs.length, a: total })); render();
       }, { wide: true, ok: t('Create demands') });
     },
-    invite: () => openModal(t('Invite user'), `${field(t('Name'), '<input name="name" required>')}${field('Email', '<input name="email" type="email" required>')}${field(t('Role'), `<select name="role"><option value="gestor">${esc(t('Traffic manager'))}</option><option value="admin">${esc(t('Administrator'))}</option></select>`)}`, (fd) => {
+    hubAdmin: () => window.open(window.HUB_URL + '/admin', '_blank', 'noopener'),
+    invite: () => LIVE ? A.hubAdmin() : openModal(t('Invite user'), `${field(t('Name'), '<input name="name" required>')}${field('Email', '<input name="email" type="email" required>')}${field(t('Role'), `<select name="role"><option value="gestor">${esc(t('Traffic manager'))}</option><option value="admin">${esc(t('Administrator'))}</option></select>`)}`, (fd) => {
       const name = (fd.get('name') || '').trim(), email = (fd.get('email') || '').trim();
       if (!name || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return mErr(t('Name and a valid email are required.'));
       if (DB.users.some((u) => u.email.toLowerCase() === email.toLowerCase())) return mErr(t('This email is already in the team.'));
       DB.users.push({ id: uid('u'), name, email, role: fd.get('role'), active: true, last: null }); commit(); closeModal(); toast(t('Invite sent to {e} (simulated)', { e: email })); render();
     }, { ok: t('Send invite') }),
-    resend: (el) => toast(t('Invite resent to {e} (simulated)', { e: user(el.dataset.id).email })),
-    toggleUser: (el) => { const u = user(el.dataset.id); if (u.id === UI.user) return; u.active = !u.active; commit(); toast(u.active ? t('{n} can sign in again', { n: u.name }) : t('{n} lost access', { n: u.name })); render(); },
+    resend: (el) => LIVE ? A.hubAdmin() : toast(t('Invite resent to {e} (simulated)', { e: user(el.dataset.id).email })),
+    toggleUser: (el) => { if (LIVE) return A.hubAdmin(); const u = user(el.dataset.id); if (u.id === UI.user) return; u.active = !u.active; commit(); toast(u.active ? t('{n} can sign in again', { n: u.name }) : t('{n} lost access', { n: u.name })); render(); },
     newMech: () => openModal(t('New mechanism'), field(t('Name'), '<input name="label" required>'), (fd) => {
       const l = (fd.get('label') || '').trim(); if (!l) return mErr(t('Give it a name.'));
       if (DB.catalog.some((c) => c.kind === 'mechanism' && c.label.toLowerCase() === l.toLowerCase())) return mErr(t('That mechanism already exists.'));
-      DB.catalog.push({ id: uid('m'), kind: 'mechanism', label: l, active: true, sort: 99, src: 'app' }); commit(); closeModal(); toast(t('Mechanism created')); render();
+      const sort = Math.max(0, ...catalogOf('mechanism', true).map((c) => c.sort || 0)) + 1;
+      DB.catalog.push({ id: uid('m'), kind: 'mechanism', label: l, active: true, sort, src: 'app' }); commit(); closeModal(); remote(() => LIVE.insertMech(l, sort)); toast(t('Mechanism created')); render();
     }),
-    renameMech: (el) => { const c = cat(el.dataset.id); openModal(t('Rename mechanism'), field(t('Name'), `<input name="label" required value="${esc(c.label)}">`), (fd) => { const l = (fd.get('label') || '').trim(); if (!l) return mErr(t('Give it a name.')); c.label = l; commit(); closeModal(); render(); }); },
-    toggleMech: (el) => { const c = cat(el.dataset.id); c.active = !c.active; commit(); render(); },
+    renameMech: (el) => { const c = cat(el.dataset.id); openModal(t('Rename mechanism'), field(t('Name'), `<input name="label" required value="${esc(c.label)}">`), (fd) => { const l = (fd.get('label') || '').trim(); if (!l) return mErr(t('Give it a name.')); c.label = l; commit(); closeModal(); remote(() => LIVE.updateMech(c.id, { label: l })); render(); }); },
+    toggleMech: (el) => { const c = cat(el.dataset.id); c.active = !c.active; commit(); remote(() => LIVE.updateMech(c.id, { active: c.active })); render(); },
     newFolder: () => openModal(t('Add folder'), `${field(t('Folder link'), '<input name="link" type="url" required placeholder="https://drive.google.com/drive/folders/…">')}${field(t('Default product'), `<select name="product">${options(activeOpts('product'), '')}</select>`)}`, (fd) => {
       if (!/^https:\/\/drive\.google\.com\//.test(fd.get('link') || '')) return mErr(t('Paste a Google Drive folder link.'));
       const p = cat(fd.get('product'));
+      if (LIVE) {
+        const m = String(fd.get('link')).match(/folders\/([A-Za-z0-9_-]+)/) || String(fd.get('link')).match(/[?&]id=([A-Za-z0-9_-]+)/);
+        if (!m) return mErr(t('Paste a Google Drive folder link.'));
+        return LIVE.insertSource({ folder_id: m[1], name: 'EDIÇÃO - ADS', product_id: p ? p.id : null, channel_id: null, niche_id: null }).then(async () => { closeModal(); await reload(); toast(t('Folder added. It will be read in the next scan.')); }).catch((e) => mErr(t('Not saved: {e}', { e: errText(e) })));
+      }
       DB.sources.push({ id: uid('s'), name: 'EDIÇÃO - ADS', path: 'ShippingCaps / ' + p.label + ' / EDIÇÃO - ADS', product: p.id, niche: p.niche, channel: 'c_meta', active: true, discovered: false, since: new Date().toISOString().slice(0, 10), lastScan: null, error: '' });
       commit(); closeModal(); toast(t('Folder added. It will be read in the next scan.')); render();
     }),
-    toggleFolder: (el) => { const s = DB.sources.find((x) => x.id === el.dataset.id); s.active = !s.active; commit(); render(); },
+    toggleFolder: (el) => { const s = DB.sources.find((x) => x.id === el.dataset.id); s.active = !s.active; commit(); remote(() => LIVE.updateSource(s.id, { active: s.active })); render(); },
   };
 
   document.addEventListener('click', (e) => {
@@ -1093,6 +1253,7 @@
       lastSel = id; return render();
     }
     if (k === 'selAll') { const S = el.dataset.scope === 'rep' ? UI.rep : UI.pipe; document.querySelectorAll(`[data-ch="sel"][data-scope="${el.dataset.scope}"]`).forEach((x) => (el.checked ? S.sel.add(x.dataset.id) : S.sel.delete(x.dataset.id))); return render(); }
+    if (k === 'role' && LIVE) { render(); return A.hubAdmin(); }
     if (k === 'role') { const u = user(el.dataset.id); u.role = el.value; commit(); toast(t('{n} is now {r}', { n: u.name, r: roleLabel(u.role) })); return render(); }
   });
   document.addEventListener('keydown', (e) => { window.__shift = e.shiftKey; });
@@ -1113,6 +1274,23 @@
     e.preventDefault();
     const fd = new FormData(f);
     if (k === 'modal' && modalSubmit) return modalSubmit(fd);
+    if (k === 'login') {
+      const btn = f.querySelector('button.btn'); const err = f.querySelector('.merr');
+      btn.disabled = true; err.textContent = '';
+      return LIVE.signIn(String(fd.get('email') || '').trim(), String(fd.get('password') || ''))
+        .then(() => boot())
+        .catch((e) => { btn.disabled = false; err.textContent = /invalid/i.test(e.message || '') ? t('Wrong email or password.') : errText(e); });
+    }
+    if (LIVE && (k === 'comment' || k === 'reply')) {
+      const parent = k === 'reply' ? DB.comments.find((c) => c.id === f.dataset.id) : null;
+      const kind = parent ? 'update' : fd.get('kind'); const body = (fd.get('body') || '').trim();
+      if (!body && !(kind === 'report' && (fd.get('sold') || fd.get('failed') || fd.get('next')))) return;
+      const offerId = parent ? parent.offer : f.dataset.id;
+      f.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+      return LIVE.insertComment({ offer: offerId, kind, body, sold: fd.get('sold'), failed: fd.get('failed'), next: fd.get('next'), test: parent ? null : fd.get('test'), parent: parent ? parent.id : null })
+        .then(async () => { UI.replyTo = null; await loadExtras(offerId); toast(t('Posted')); })
+        .catch((e) => { f.querySelectorAll('button').forEach((b) => { b.disabled = false; }); toast(t('Not saved: {e}', { e: errText(e) })); });
+    }
     if (k === 'comment') {
       const o = offer(f.dataset.id); const kind = fd.get('kind'); const body = (fd.get('body') || '').trim(); if (!body) return;
       DB.comments.push({ id: uid('c'), offer: o.id, parent: null, kind, body, sold: kind === 'report' ? fd.get('sold') : '', failed: kind === 'report' ? fd.get('failed') : '', next: kind === 'report' ? fd.get('next') : '', links: [], author: UI.user, at: now(), edited: null, test: fd.get('test') || null });
@@ -1138,5 +1316,32 @@
   document.addEventListener('dragover', (e) => { const col = e.target.closest && e.target.closest('[data-drop]'); if (!col || !dragId) return; e.preventDefault(); document.querySelectorAll('.over').forEach((x) => x !== col && x.classList.remove('over')); col.classList.add('over'); });
   document.addEventListener('drop', (e) => { const col = e.target.closest && e.target.closest('[data-drop]'); if (!col || !dragId) return; e.preventDefault(); const ids = UI.pipe.sel.has(dragId) ? [...UI.pipe.sel] : [dragId]; changeStatus(ids, col.dataset.drop); });
 
-  render();
+  // ---------- início ----------
+  let stopListen = null;
+  async function boot() {
+    if (!LIVE) { render(); return; }
+    UI.boot = true; render();
+    try {
+      await LIVE.getSession();
+      if (!LIVE.session) { UI.boot = false; UI.user = null; return render(); }
+      const meRow = await LIVE.identity();
+      if (!meRow || !meRow.active || !meRow.role) { UI.user = meRow ? meRow.id : null; UI.denied = true; UI.boot = false; return render(); }
+      UI.denied = false;
+      DB = await LIVE.load();
+      if (!DB.users.some((u) => u.id === meRow.id)) DB.users.push({ id: meRow.id, name: meRow.name, email: meRow.email, role: meRow.role, active: true, last: null });
+      UI.user = meRow.id;
+      if (stopListen) stopListen();
+      stopListen = LIVE.listen(() => reloadSoon());
+    } catch (e) {
+      toast(t('Could not load: {e}', { e: errText(e) }));
+      if (!LIVE.session) UI.user = null;
+    }
+    UI.boot = false; render();
+  }
+  if (LIVE) {
+    LIVE.sb.auth.onAuthStateChange((ev) => { if (ev === 'SIGNED_OUT' && UI.user) { DB = emptyDB(); UI.user = null; render(); } });
+    setInterval(() => { if (UI.user && document.visibilityState === 'visible') reload(); }, 60000);
+    document.addEventListener('visibilitychange', () => { if (UI.user && document.visibilityState === 'visible') reloadSoon(300); });
+  }
+  boot();
 })();
