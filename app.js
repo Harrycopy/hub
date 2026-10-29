@@ -31,6 +31,7 @@
   const qp = new URLSearchParams(location.search);
   if (!LIVE && qp.get('as') && DB.users.some((u) => u.id === qp.get('as'))) UI.user = qp.get('as');
   if (qp.get('lang') === 'pt' || qp.get('lang') === 'en') UI.lang = qp.get('lang');
+  if (qp.get('theme') === 'light') document.documentElement.dataset.theme = 'light';
   const commit = () => { if (!LIVE) store.set(LS, DB); };
   const saveUI = () => store.set(LS_UI, { lang: UI.lang, user: LIVE ? null : UI.user, pipeView: UI.pipe.view });
 
@@ -296,7 +297,11 @@
     cmd: I('<path d="M9 6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3z"/>'),
     msg: I('<path d="M4 5h16v11H9l-5 4z"/>'),
     clock: I('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+    sun: I('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'),
+    moon: I('<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z"/>'),
   };
+  const isLight = () => document.documentElement.dataset.theme === 'light';
+  const themeBtn = (cls) => `<button type="button" class="tool ${cls || ''}" data-a="theme" title="${esc(isLight() ? t('Dark background') : t('White background'))}" aria-label="${esc(isLight() ? t('Dark background') : t('White background'))}">${isLight() ? IC.moon : IC.sun}</button>`;
 
   // ---------- peças ----------
   const badge = (s) => `<span class="sb s-${s}"><i></i>${esc(sl(s))}</span>`;
@@ -360,6 +365,7 @@
         ${opts.panel ? '<div class="top-spacer"></div>' : `<nav class="nav" aria-label="${esc(t('Main'))}">${nav.map(([h, n, ic, l, c]) => `<a href="${h}" class="${r.name === n || (n === 'pipeline' && r.name === 'demand') ? 'on' : ''}">${ic}<span>${esc(l)}</span>${c ? `<b class="count amber">${c}</b>` : ''}</a>`).join('')}</nav>`}
         <div class="top-tools">
           <button class="tool kbd-hint" data-a="palette" title="${esc(t('Quick search'))} (⌘K)">${IC.search}<span>⌘K</span></button>
+          ${themeBtn()}
           <button class="tool lang" data-a="lang" title="${esc(t('Language'))}"><b class="${UI.lang === 'en' ? 'on' : ''}">EN</b><b class="${UI.lang === 'pt' ? 'on' : ''}">PT</b></button>
           <div class="pop-wrap"><button class="tool" data-a="bell" aria-label="${esc(t('Notifications'))}">${IC.bell}${unread ? `<b class="dot">${unread}</b>` : ''}</button>${UI.bellOpen ? notifPanel() : ''}</div>
           <div class="pop-wrap"><button class="tool me" data-a="menu"><span class="avatar">${esc(initials(u.name))}</span><span class="me-txt"><b>${esc(u.name)}</b><small>${esc(roleLabel(u.role))}</small></span></button>${UI.menuOpen ? userMenu() : ''}</div>
@@ -422,7 +428,7 @@
           </div>
           <p class="auth-links"><a class="link" href="${window.HUB_URL}/esqueci-senha" target="_blank" rel="noopener">${esc(t('Forgot password'))}</a><a class="link" href="?demo">${esc(t('See the demo with sample data'))}</a></p>
           <p class="auth-note">${esc(t('Access restricted to invited users. New users are invited in the Hub.'))}</p>
-          <button type="button" class="tool lang solo" data-a="lang"><b class="${UI.lang === 'en' ? 'on' : ''}">EN</b><b class="${UI.lang === 'pt' ? 'on' : ''}">PT</b></button>
+          <div class="auth-tools"><button type="button" class="tool lang" data-a="lang"><b class="${UI.lang === 'en' ? 'on' : ''}">EN</b><b class="${UI.lang === 'pt' ? 'on' : ''}">PT</b></button>${themeBtn()}</div>
         </form>` : `<div class="auth-card">
           <span class="auth-ic">${IC.lock}</span>
           <p class="eyebrow">${esc(t('Demo access'))}</p>
@@ -430,7 +436,7 @@
           <p class="muted">${esc(t('This is the prototype. Pick a profile to see exactly what that person sees. No password, no real data.'))}</p>
           <div class="who">${DB.users.filter((u) => u.active).map((u) => `<button class="who-b" data-a="login" data-id="${u.id}"><span class="avatar">${esc(initials(u.name))}</span><span><b>${esc(u.name)}</b><small>${esc(roleLabel(u.role))} · ${esc(t('{n} demands', { n: DB.offers.filter((o) => u.role === 'admin' || o.assignee === u.id).length }))}</small></span>${IC.back.replace('class="ic ', 'class="ic flip ')}</button>`).join('')}</div>
           <p class="auth-note">${esc(t('Demo with sample data.'))} <a class="link" href="./">${esc(t('Go to the real Hub sign-in'))}</a></p>
-          <button class="tool lang solo" data-a="lang"><b class="${UI.lang === 'en' ? 'on' : ''}">EN</b><b class="${UI.lang === 'pt' ? 'on' : ''}">PT</b></button>
+          <div class="auth-tools"><button type="button" class="tool lang" data-a="lang"><b class="${UI.lang === 'en' ? 'on' : ''}">EN</b><b class="${UI.lang === 'pt' ? 'on' : ''}">PT</b></button>${themeBtn()}</div>
         </div>`}
       </section>
     </div>`;
@@ -1093,6 +1099,7 @@
     signOut: async () => { UI.menuOpen = false; if (LIVE) { if (stopListen) stopListen(); stopListen = null; await LIVE.signOut(); DB = emptyDB(); UI.extras = {}; } UI.user = null; saveUI(); render(); },
     switchUser: (el) => { UI.user = el.dataset.id; UI.menuOpen = false; saveUI(); clearSel(); toast(t('Now viewing as {n}', { n: me().name })); render(); },
     lang: () => { UI.lang = UI.lang === 'pt' ? 'en' : 'pt'; saveUI(); render(); },
+    theme: () => { const light = !isLight(); if (light) document.documentElement.dataset.theme = 'light'; else delete document.documentElement.dataset.theme; try { localStorage.setItem('tsh-theme', light ? 'light' : 'dark'); } catch (e) { /* sem armazenamento */ } render(); },
     bell: () => { UI.bellOpen = !UI.bellOpen; UI.menuOpen = false; render(); },
     menu: () => { UI.menuOpen = !UI.menuOpen; UI.bellOpen = false; render(); },
     readAll: () => { DB.notifications.forEach((n) => { if (n.user === UI.user) n.read = true; }); commit(); remote(() => LIVE.readNotifications()); render(); },

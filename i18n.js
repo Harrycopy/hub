@@ -164,4 +164,5 @@ window.PT = {
   '{n} item(s) were not saved: no permission': '{n} item(ns) não salvos: sem permissão',
   '{n} new ad(s) arrived from Drive ({b})': '{n} anúncio(s) novo(s) chegaram do Drive ({b})',
   '{n} saved, then it stopped: {e}': '{n} salvos, depois parou: {e}',
+  'Dark background': 'Fundo escuro', 'White background': 'Fundo branco',
 };
