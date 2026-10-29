@@ -44,6 +44,8 @@
     return o;
   };
   const loc = () => (UI.lang === 'pt' ? 'pt-BR' : 'en-US');
+  const safeUrl = (u) => { try { const x = new URL(String(u).trim()); return /^https?:$/.test(x.protocol) ? x.href : '#'; } catch (e) { return '#'; } };
+  const splitLines = (s) => String(s || '').split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
   const now = () => new Date().toISOString();
   let seq = Date.now() % 100000;
   const uid = (p) => p + '_x' + (++seq).toString(36);
@@ -534,7 +536,7 @@
         <td><a href="#/demand/${o.id}">#${o.number}</a>${o.archived ? ` <span class="tag">${esc(t('Archived'))}</span>` : ''}</td>
         <td>${adVsls(a).map(catLabel).join(', ')}</td><td>${o.mechanisms.map(catLabel).join(', ')}</td><td>${esc(catLabel(a.channel))}</td>
         <td>${esc((user(o.assignee) || {}).name || '—')}</td>
-        ${scope === 'rep' ? `<td class="r mono">${num(m.roas, 2)}</td><td><button class="btn ghost xs" data-a="csvOffer" data-id="${o.id}">CSV</button></td>` : `<td class="${isOverdue(o) ? 'late' : ''}">${esc(fmtDate(o.deadline))}</td><td class="muted">${esc(ago(a.changed))}</td>`}
+        ${scope === 'rep' ? `<td class="r mono">${num(m.roas, 2)}</td><td><button class="btn ghost xs" data-a="csvOffer" data-id="${o.id}" data-period="1">CSV</button></td>` : `<td class="${isOverdue(o) ? 'late' : ''}">${esc(fmtDate(o.deadline))}</td><td class="muted">${esc(ago(a.changed))}</td>`}
       </tr>`;
     }).join('')}</tbody></table></div>`;
   }
@@ -580,7 +582,7 @@
         <div class="ph-a">
           ${isAdmin() ? `<button class="btn ghost" data-a="editOffer" data-id="${o.id}">${IC.edit}${esc(t('Edit'))}</button><button class="btn ghost" data-a="archive" data-id="${o.id}">${IC.archive}${esc(o.archived ? t('Restore') : t('Archive'))}</button>` : ''}
           <button class="btn ghost" data-a="csvOffer" data-id="${o.id}">${IC.down}CSV</button>
-          <button class="btn ghost" data-a="print">${IC.print}PDF</button>
+          <button class="btn ghost" data-a="pdfOffer" data-id="${o.id}">${IC.down}PDF</button>
         </div></div>
       <section class="delivery">
         <div class="dv-main"><p class="eyebrow">${esc(t('Delivery for the manager'))}</p>
@@ -627,13 +629,13 @@
             <div class="adrow-t"><b>${esc(adTitle(a))}</b>${origin(a)}<small>${esc(catLabel(a.channel))} · ${ts.length} ${esc(t('tests'))} · VSL ${esc(adVsls(a).map(catLabel).join(', '))}${a.reason ? ' · ' + esc(a.reason) : ''}</small></div>
             <div class="adrow-a">
               <a class="btn ghost xs" href="${esc(a.link)}" target="_blank" rel="noopener">Drive${IC.ext}</a>
-              ${w ? `<button class="btn ghost xs" data-a="newTest" data-id="${a.id}">${IC.plus}${esc(t('Record test'))}</button>` : ''}
+              ${w ? `<button class="btn ghost xs" data-a="editAd" data-id="${a.id}" title="${esc(t('Edit ad'))}">${IC.edit}</button><button class="btn ghost xs" data-a="newTest" data-id="${a.id}">${IC.plus}${esc(t('Record test'))}</button>` : ''}
               ${isAdmin() && !o.archived ? `<button class="btn ghost xs" data-a="relaunchOne" data-id="${a.id}">${IC.rocket}${esc(t('Relaunch'))}</button>` : ''}
               ${w && !ts.length ? `<button class="btn ghost xs danger-t" data-a="trashOne" data-id="${a.id}" title="${esc(t('Trash'))}">${IC.trash}</button>` : ''}
               ${statusSelect(a)}
             </div>
           </div>
-          ${open ? `<div class="tests">${ts.length ? ts.map((x) => { const mm = metrics([x]); return `<div class="test"><div class="test-h"><b>${esc(fmtDate(x.start))} → ${x.end ? esc(fmtDate(x.end)) : esc(t('ongoing'))}</b>${x.cls ? `<span class="cls ${x.cls}">${esc(x.cls === 'effective' ? t('Effective') : t('Not effective'))}</span>` : `<span class="cls">${esc(t('Unclassified'))}</span>`}<small>${esc(x.src === 'manual' ? t('Manual') : t('Integration'))}</small>${isAdmin() ? `<button class="link danger-t" data-a="delTest" data-id="${x.id}">${esc(t('Delete'))}</button>` : ''}</div>
+          ${open ? `<div class="tests">${ts.length ? ts.map((x) => { const mm = metrics([x]); return `<div class="test"><div class="test-h"><b>${esc(fmtDate(x.start))} → ${x.end ? esc(fmtDate(x.end)) : esc(t('ongoing'))}</b>${x.cls ? `<span class="cls ${x.cls}">${esc(x.cls === 'effective' ? t('Effective') : t('Not effective'))}</span>` : `<span class="cls">${esc(t('Unclassified'))}</span>`}<small>${esc(x.src === 'manual' ? t('Manual') : t('Integration'))}</small><span class="test-a">${w ? `<button class="link" data-a="editTest" data-id="${x.id}">${esc(t('Edit'))}</button>` : ''}${isAdmin() ? `<button class="link danger-t" data-a="delTest" data-id="${x.id}">${esc(t('Delete'))}</button>` : ''}</span></div>
               <div class="test-m"><span>${esc(t('Spend'))} <b>${money(x.spend)}</b></span><span>${esc(t('Revenue'))} <b>${money(x.revenue)}</b></span><span>ROAS <b>${num(mm.roas, 2)}</b></span><span>CTR <b>${pct(mm.ctr)}</b></span><span>CPC <b>${money(mm.cpc)}</b></span><span>CPA <b>${money(mm.cpa)}</b></span><span>${esc(t('Conv.'))} <b>${num(x.conversions)}</b></span></div>${x.notes ? `<p class="muted">${esc(x.notes)}</p>` : ''}</div>`; }).join('') : `<p class="empty-s">${esc(t('No tests recorded yet.'))}</p>`}</div>` : ''}
         </div>`;
       }).join('') || `<div class="empty"><b>${esc(t('No ads in this demand yet.'))}</b></div>`}</div>`;
@@ -644,15 +646,22 @@
     const tests = DB.tests.filter((x) => x.offer === o.id);
     const one = (c, reply) => `<article class="cm${reply ? ' reply' : ''}${c.kind === 'report' ? ' rep' : ''}">
       <header><span class="avatar sm">${esc(initials((user(c.author) || { name: '?' }).name))}</span><b>${esc((user(c.author) || {}).name || '—')}</b>${c.kind === 'report' ? `<span class="tag amber">${esc(t('Report'))}</span>` : ''}<small>${esc(ago(c.at))}${c.edited ? ' · ' + esc(t('edited')) : ''}</small></header>
-      <p>${esc(c.body)}</p>
+      ${UI.editComment === c.id ? `<form class="edit-f" data-form="editComment" data-id="${c.id}">
+          <textarea name="body">${esc(c.body)}</textarea>
+          ${c.kind === 'report' ? `<div class="rep-fields on"><input name="sold" value="${esc(c.sold)}" placeholder="${esc(t('What sold'))}"><input name="failed" value="${esc(c.failed)}" placeholder="${esc(t('What did not work'))}"><input name="next" value="${esc(c.next)}" placeholder="${esc(t('Next step'))}"></div>` : ''}
+          <textarea name="links" class="links-in" placeholder="${esc(t('Links, one per line'))}">${esc((c.links || []).join('\n'))}</textarea>
+          <div class="composer-f"><button type="button" class="btn ghost sm" data-a="editComment" data-id="${c.id}">${esc(t('Cancel'))}</button><button class="btn primary sm">${esc(t('Save'))}</button></div>
+        </form>` : `<p>${esc(c.body)}</p>
       ${c.kind === 'report' ? `<dl class="rep-g"><div><dt>${esc(t('What sold'))}</dt><dd>${esc(c.sold || '—')}</dd></div><div><dt>${esc(t('What did not work'))}</dt><dd>${esc(c.failed || '—')}</dd></div><div><dt>${esc(t('Next step'))}</dt><dd>${esc(c.next || '—')}</dd></div></dl>` : ''}
-      ${!reply && w ? `<button class="link" data-a="reply" data-id="${c.id}">${esc(t('Reply'))}</button>` : ''}
+      ${(c.links || []).length ? `<ul class="cm-links">${c.links.map((l) => `<li><a class="link" href="${esc(safeUrl(l))}" target="_blank" rel="noopener">${esc(l)}${IC.ext}</a></li>`).join('')}</ul>` : ''}`}
+      <div class="cm-a">${!reply && w ? `<button class="link" data-a="reply" data-id="${c.id}">${esc(t('Reply'))}</button>` : ''}${c.author === UI.user && UI.editComment !== c.id ? `<button class="link" data-a="editComment" data-id="${c.id}">${esc(t('Edit'))}</button>` : ''}</div>
       ${UI.replyTo === c.id ? `<form class="reply-f" data-form="reply" data-id="${c.id}"><textarea name="body" required placeholder="${esc(t('Write a reply'))}"></textarea><button class="btn primary sm">${esc(t('Send'))}</button></form>` : ''}
     </article>`;
     return `${w ? `<form class="composer" data-form="comment" data-id="${o.id}">
         <div class="seg sm"><label><input type="radio" name="kind" value="update" checked><span>${esc(t('Update'))}</span></label><label><input type="radio" name="kind" value="report"><span>${esc(t('Report'))}</span></label></div>
         <textarea name="body" required placeholder="${esc(t('What happened with this demand?'))}"></textarea>
         <div class="rep-fields"><input name="sold" placeholder="${esc(t('What sold'))}"><input name="failed" placeholder="${esc(t('What did not work'))}"><input name="next" placeholder="${esc(t('Next step'))}"></div>
+        <textarea name="links" class="links-in" placeholder="${esc(t('Links, one per line (optional)'))}"></textarea>
         <div class="composer-f"><select name="test"><option value="">${esc(t('No linked test'))}</option>${tests.map((x) => `<option value="${x.id}">${esc((ad(x.ad) || {}).name)} · ${esc(fmtDate(x.start))}</option>`).join('')}</select><button class="btn primary sm">${IC.msg}${esc(t('Post'))}</button></div>
       </form>` : ''}
       <div class="cms">${roots.map((c) => one(c) + list.filter((r) => r.parent === c.id).sort((a, b) => a.at.localeCompare(b.at)).map((r) => one(r, true)).join('')).join('') || `<div class="empty"><b>${esc(t('No comments yet.'))}</b></div>`}</div>`;
@@ -667,6 +676,7 @@
       comment_added: t('commented'), report_added: t('posted a report'), offer_edited: t('edited the demand'), archived: t('archived the demand'), unarchived: t('restored the demand'),
       ad_created: t('added ad {ad}', { ad: d.ad }), test_added: t('recorded a test on {ad}', { ad: d.ad }), test_deleted: t('deleted a test on {ad}', { ad: d.ad }),
       drive_linked: t('linked Drive batch {b} ({n} ads)', { b: d.batch, n: d.n }),
+      ad_edited: t('edited ad {ad}', { ad: d.ad }), test_updated: t('updated a test'), list_imported: t('{n} new ad(s) arrived from Drive ({b})', { n: d.n, b: t('list') }),
       // nomes que os triggers do banco gravam
       status_anuncio_alterado: t('moved {ad}: {f} → {to}', { ad: d.nome || t('ad'), f: l.from ? sl(l.from) : '—', to: l.to ? sl(l.to) : '—' }),
       status_alterado: t('changed the demand status: {f} → {to}', { f: l.from ? sl(l.from) : '—', to: l.to ? sl(l.to) : '—' }),
@@ -694,7 +704,7 @@
     const list = applyFilters(visibleAds(), R.f);
     const sc = [['', t('All ads')], ['rejected', t('Rejected')], ['sold_rej', t('Sold · rejected')], ['validated', t('Validated')]];
     return `<div class="ph"><div><p class="eyebrow">${esc(t('Operations / Reports'))}</p><h1 class="page-title">${esc(t('Reports'))}</h1></div>
-      <div class="ph-a">${isAdmin() ? `<button class="btn ghost" data-a="csvAll">${IC.down}${esc(t('Consolidated CSV'))}</button><button class="btn ghost" data-a="print">${IC.print}${esc(t('Consolidated PDF'))}</button>` : ''}</div></div>
+      <div class="ph-a">${isAdmin() ? `<button class="btn ghost" data-a="csvAll">${IC.down}${esc(t('Consolidated CSV'))}</button><button class="btn ghost" data-a="pdfAll">${IC.down}${esc(t('Consolidated PDF'))}</button>` : ''}</div></div>
       <div class="seg shortcuts">${sc.map(([s, l]) => `<button class="${(R.f.status || '') === s ? 'on' : ''}" data-a="repShortcut" data-s="${s}">${esc(l)} <b class="count">${applyFilters(visibleAds(), Object.assign({}, R.f, { status: s })).length}</b></button>`).join('')}</div>
       ${filterBar('rep', R.f, { status: STATUSES, tests: true })}
       <p class="muted mono small">${list.length} ${esc(t('ads'))}${R.f.tFrom || R.f.tTo ? ' · ' + esc(t('test period applied')) : ''}</p>
@@ -756,7 +766,7 @@
     const selN = D.sel.size;
     return `<div class="ph"><div><p class="eyebrow">${esc(t('Admin / Drive Inbox'))}</p><h1 class="page-title">${esc(t('Drive Inbox'))}</h1>
       <p class="muted">${esc(t('Every new batch dropped into an "EDIÇÃO - ADS" folder shows up here. Turn it into a demand in one click.'))}</p></div>
-      <div class="ph-a"><button class="btn primary" data-a="scan">${LIVE ? IC.ext : IC.refresh}${esc(LIVE ? t('Read Drive now (in the Hub)') : t('Read Drive now'))}</button></div></div>
+      <div class="ph-a"><button class="btn ghost" data-a="adList">${IC.list}${esc(t('Demand from ad list'))}</button><button class="btn primary" data-a="scan">${LIVE ? IC.ext : IC.refresh}${esc(LIVE ? t('Read Drive now (in the Hub)') : t('Read Drive now'))}</button></div></div>
       <div class="scanline"><span>${IC.clock}${esc(t('Last automatic scan'))}: <b>${esc(ago(DB.scans.auto))}</b></span>${DB.scans.manual ? `<span>${esc(t('Last manual scan'))}: <b>${esc(ago(DB.scans.manual.at))}</b> · ${esc(t('{b} new batches, {f} files', { b: DB.scans.manual.b, f: DB.scans.manual.f }))}</span>` : ''}<span class="muted">${esc(t('Incremental every 10 min · full read every 24 h'))}</span></div>
       <div class="viewbar"><div class="seg">${tabs.map(([k, l]) => `<button class="${D.tab === k ? 'on' : ''}" data-a="driveTab" data-v="${k}">${esc(l)} <b class="count">${DB.batches.filter((b) => b.status === k && !b.removed).length}</b></button>`).join('')}</div></div>
       ${bySource.length ? bySource.map(([s, list]) => `<section class="src"><header><div><b>${esc(catLabel(s.product))}</b><small>${esc(s.path)}</small>${s.error ? `<small class="err">${esc(s.error)}</small>` : ''}</div><button class="link" data-a="selFolder" data-id="${s.id}">${esc(t('Select all in this folder'))}</button></header>${list.map(batchCard).join('')}</section>`).join('') : `<div class="empty"><b>${esc(t('Nothing here.'))}</b></div>`}
@@ -958,17 +968,21 @@
       commit(); closeModal(); clearSel(); toast(t('{n} demands updated', { n: os.length })); render();
     }, { ok: t('Apply') });
   }
-  function testModal(a) {
-    openModal(t('Record test · {ad}', { ad: a.name }), `<div class="mgrid">
-      ${field(t('Start'), `<input type="date" name="start" required value="${new Date().toISOString().slice(0, 10)}">`)}
-      ${field(t('End'), `<input type="date" name="end">`)}
-      ${field(t('Spend (R$)'), `<input name="spend" inputmode="decimal" placeholder="1.234,56">`)}
-      ${field(t('Revenue (R$)'), `<input name="revenue" inputmode="decimal">`)}
-      ${field(t('Impressions'), `<input name="impressions" inputmode="numeric">`)}
-      ${field(t('Clicks'), `<input name="clicks" inputmode="numeric">`)}
-      ${field(t('Conversions'), `<input name="conversions" inputmode="numeric">`)}
-      ${field(t('Classification'), `<select name="cls"><option value="">${esc(t('Unclassified'))}</option><option value="effective">${esc(t('Effective'))}</option><option value="not_effective">${esc(t('Not effective'))}</option></select>`)}
-      ${field(t('Notes'), `<textarea name="notes"></textarea>`, 'full')}</div>`, (fd) => {
+  // registrar teste novo ou editar um que já existe (old)
+  function testModal(a, old) {
+    const v = old || {};
+    const dnum = (n) => (n == null ? '' : String(n).replace('.', ','));
+    const sel = (c) => (v.cls === c ? ' selected' : '');
+    openModal(old ? t('Edit test · {ad}', { ad: a.name }) : t('Record test · {ad}', { ad: a.name }), `<div class="mgrid">
+      ${field(t('Start'), `<input type="date" name="start" required value="${esc(v.start || new Date().toISOString().slice(0, 10))}">`)}
+      ${field(t('End'), `<input type="date" name="end" value="${esc(v.end || '')}">`)}
+      ${field(t('Spend (R$)'), `<input name="spend" inputmode="decimal" placeholder="1.234,56" value="${esc(dnum(v.spend))}">`)}
+      ${field(t('Revenue (R$)'), `<input name="revenue" inputmode="decimal" value="${esc(dnum(v.revenue))}">`)}
+      ${field(t('Impressions'), `<input name="impressions" inputmode="numeric" value="${esc(v.impressions == null ? '' : v.impressions)}">`)}
+      ${field(t('Clicks'), `<input name="clicks" inputmode="numeric" value="${esc(v.clicks == null ? '' : v.clicks)}">`)}
+      ${field(t('Conversions'), `<input name="conversions" inputmode="numeric" value="${esc(v.conversions == null ? '' : v.conversions)}">`)}
+      ${field(t('Classification'), `<select name="cls"><option value="">${esc(t('Unclassified'))}</option><option value="effective"${sel('effective')}>${esc(t('Effective'))}</option><option value="not_effective"${sel('not_effective')}>${esc(t('Not effective'))}</option></select>`)}
+      ${field(t('Notes'), `<textarea name="notes">${esc(v.notes || '')}</textarea>`, 'full')}</div>`, (fd) => {
       const dec = (s) => { s = (s || '').trim(); if (!s) return null; const v = Number(s.includes(',') ? s.replace(/\./g, '').replace(',', '.') : s); return isNaN(v) ? NaN : v; };
       const int = (s) => { s = (s || '').trim(); if (!s) return null; return /^\d+$/.test(s.replace(/[.,]/g, '')) ? +s.replace(/[.,]/g, '') : NaN; };
       const x = { id: uid('t'), ad: a.id, offer: a.offer, start: fd.get('start'), end: fd.get('end') || null, spend: dec(fd.get('spend')), revenue: dec(fd.get('revenue')), impressions: int(fd.get('impressions')), clicks: int(fd.get('clicks')), conversions: int(fd.get('conversions')), cls: fd.get('cls') || null, notes: (fd.get('notes') || '').trim(), src: 'manual' };
@@ -979,11 +993,28 @@
       if (x.clicks != null && x.impressions != null && x.clicks > x.impressions) return mErr(t('Clicks are higher than impressions.'));
       if (LIVE) {
         const btn = modalRoot.querySelector('footer .btn.primary'); btn.disabled = true;
-        return LIVE.insertTest(x).then(async () => { UI.openAds.add(a.id); closeModal(); await reload(); toast(t('Test recorded')); }).catch((e) => { btn.disabled = false; mErr(t('Not saved: {e}', { e: errText(e) })); });
+        const w = old ? LIVE.updateTest(old.id, x) : LIVE.insertTest(x);
+        return w.then(async () => { UI.openAds.add(a.id); closeModal(); await reload(); toast(old ? t('Test updated') : t('Test recorded')); }).catch((e) => { btn.disabled = false; mErr(t('Not saved: {e}', { e: errText(e) })); });
       }
-      DB.tests.push(x); log(a.offer, 'test_added', { ad: a.name }); UI.openAds.add(a.id);
-      commit(); closeModal(); toast(t('Test recorded')); render();
+      if (old) { Object.assign(old, x, { id: old.id, src: old.src }); log(a.offer, 'test_updated', { ad: a.name }); } else { DB.tests.push(x); log(a.offer, 'test_added', { ad: a.name }); }
+      UI.openAds.add(a.id); commit(); closeModal(); toast(old ? t('Test updated') : t('Test recorded')); render();
     }, { wide: true, ok: t('Save test') });
+  }
+  function adModal(a) {
+    openModal(t('Edit ad · {ad}', { ad: a.name }), `${field(t('Name (file name without extension)'), `<input name="name" required value="${esc(a.name)}">`)}
+      ${field(t('Channel'), `<select name="channel">${options(catalogOf('channel', true).map((c) => [c.id, c.label]), a.channel)}</select>`)}
+      ${field(t('Platform ID'), `<input name="platformId" value="${esc(a.platformId || '')}" placeholder="${esc(t('Ad ID in Meta, Google…'))}">`)}
+      ${field(t('Link'), `<input name="link" type="url" value="${esc(a.link || '')}" placeholder="https://drive.google.com/file/d/…">`)}`, (fd) => {
+      const v = { name: (fd.get('name') || '').trim(), channel: fd.get('channel'), platformId: (fd.get('platformId') || '').trim(), link: (fd.get('link') || '').trim() };
+      if (!v.name) return mErr(t('Give the ad a name.'));
+      if (DB.ads.some((x) => x.id !== a.id && x.offer === a.offer && !x.trashed && x.name.toLowerCase() === v.name.toLowerCase())) return mErr(t('This demand already has an ad with that name.'));
+      if (v.link && safeUrl(v.link) === '#') return mErr(t('The link must start with https://'));
+      if (LIVE) {
+        const btn = modalRoot.querySelector('footer .btn.primary'); btn.disabled = true;
+        return LIVE.updateAd(a.id, v).then(async () => { closeModal(); await reload(); toast(t('Ad updated')); }).catch((e) => { btn.disabled = false; mErr(t('Not saved: {e}', { e: errText(e) })); });
+      }
+      Object.assign(a, v); log(a.offer, 'ad_edited', { ad: a.name }); commit(); closeModal(); toast(t('Ad updated')); render();
+    });
   }
 
   // ---------- paleta de comandos ----------
@@ -1034,22 +1065,179 @@
   const csvCell = (v) => { if (v == null) return ''; const s = typeof v === 'number' ? String(v).replace('.', ',') : String(v); return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
   const csv = (rows) => rows.map((r) => r.map(csvCell).join(';')).join('\r\n');
   const slug = (s) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-  function csvOffer(o) {
-    const head = ['Demand', 'Demand name', 'Ad', 'Product', 'VSL', 'Mechanism', 'Channel', 'Manager', 'Status', 'Rejection reason', 'Relaunch of', 'Test start', 'Test end', 'Classification', 'Spend', 'Revenue', 'Impressions', 'Clicks', 'Conversions', 'ROAS', 'CPA', 'CTR', 'CPC', 'CPM'];
-    const rows = [head];
-    DB.ads.filter((a) => a.offer === o.id && !a.trashed).forEach((a) => {
-      const base = ['#' + o.number, o.name, a.name, adProducts(a).map(catLabel).join(' + '), adVsls(a).map(catLabel).join(' + '), o.mechanisms.map(catLabel).join(' + '), catLabel(a.channel), (user(o.assignee) || {}).name, SLABEL[a.status], a.reason, a.origin ? (ad(a.origin) || {}).name : ''];
-      const ts = testsOf(a).filter((x) => (!UI.rep.f.tFrom || x.start >= UI.rep.f.tFrom) && (!UI.rep.f.tTo || x.start <= UI.rep.f.tTo));
-      if (!ts.length) rows.push(base);
-      ts.forEach((x) => { const m = metrics([x]); rows.push(base.concat([x.start, x.end, x.cls, x.spend, x.revenue, x.impressions, x.clicks, x.conversions, m.roas && +m.roas.toFixed(2), m.cpa && +m.cpa.toFixed(2), m.ctr && +(m.ctr * 100).toFixed(2), m.cpc && +m.cpc.toFixed(2), m.cpm && +m.cpm.toFixed(2)])); });
+  // ---- relatórios iguais aos do Hub (colunas e textos em inglês, como lá) ----
+  const HUB_STATUS = { test: 'Test', testing: 'Testing', scaling: 'Scaling', validated: 'Validated', rejected: 'Rejected', sold_nv: 'Sold but not validated', sold_rej: 'Sold but rejected' };
+  const csvNum = (v, d) => (v == null || !isFinite(v) ? '' : (d == null ? String(v) : Number(v).toFixed(d)).replace('.', ','));
+  const nicheName = (id) => (niche(id) || {}).label || '';
+  const personName = (id) => { const u = user(id); return (u && (u.name || u.email)) || 'No data'; };
+  const clsText = (x) => (x.cls === 'effective' ? 'Successful' : x.cls === 'not_effective' ? 'Unsuccessful' : x.end ? 'Unclassified' : 'Testing');
+  const inPeriod = (x, per) => !per || ((!per.tFrom || x.start >= per.tFrom) && (!per.tTo || x.start <= per.tTo));
+  const TEST_HEAD = ['Offer number', 'Offer', 'Niche', 'Product', 'VSL', 'Mechanism', 'Channel', 'Drive link', 'Assignee', 'Ad status', 'Ad', 'Ad channel', 'Platform ID', 'Ad link', 'Test start', 'Test end', 'Spend (BRL)', 'Impressions', 'Clicks', 'Conversions', 'Attributed revenue (BRL)', 'CTR (%)', 'CPC (BRL)', 'CPM (BRL)', 'CPA (BRL)', 'ROAS', 'Classification', 'Test notes'];
+  const offerBase = (o, a) => [o.number, o.name, nicheName(o.niche), adProducts(a).map(catLabel).join(' · '), adVsls(a).map(catLabel).join(' · '), o.mechanisms.map(catLabel).join(' · '), catLabel(o.channel), o.drive, personName(o.assignee)];
+  const adCells = (a) => [HUB_STATUS[a.status], a.name, catLabel(a.channel), a.platformId || '', a.link || ''];
+  const offerAds = (o) => DB.ads.filter((a) => a.offer === o.id && !a.trashed).sort((x, y) => naturalCmp(x.name, y.name));
+  function csvOffer(o, per) {
+    const rows = [TEST_HEAD];
+    offerAds(o).forEach((a) => {
+      const ts = testsOf(a).filter((x) => inPeriod(x, per)).sort((x, y) => x.start.localeCompare(y.start));
+      if (!ts.length) return rows.push(offerBase(o, a).concat(adCells(a), Array(14).fill('')));
+      ts.forEach((x) => { const m = metrics([x]); rows.push(offerBase(o, a).concat(adCells(a), [x.start, x.end || '', csvNum(x.spend, 2), x.impressions, x.clicks, x.conversions, csvNum(x.revenue, 2), csvNum(m.ctr == null ? null : m.ctr * 100, 2), csvNum(m.cpc, 2), csvNum(m.cpm, 2), csvNum(m.cpa, 2), csvNum(m.roas, 2), clsText(x), x.notes || ''])); });
     });
-    download('demand-' + o.number + '-' + slug(o.name) + '-' + new Date().toISOString().slice(0, 10) + '.csv', csv(rows));
+    download(slug('oferta-' + o.number + '-' + o.name) + '-' + new Date().toISOString().slice(0, 10) + '.csv', csv(rows));
   }
   function csvAll() {
     const list = applyFilters(visibleAds(), UI.rep.f);
-    const rows = [['Demand', 'Ad', 'Product', 'VSL', 'Mechanism', 'Channel', 'Manager', 'Status', 'Rejection reason', 'Tests', 'Spend', 'Revenue', 'ROAS', 'Final classification']];
-    list.forEach((a) => { const o = offer(a.offer); const m = metrics(testsOf(a)); rows.push(['#' + o.number, a.name, adProducts(a).map(catLabel).join(' + '), adVsls(a).map(catLabel).join(' + '), o.mechanisms.map(catLabel).join(' + '), catLabel(a.channel), (user(o.assignee) || {}).name, SLABEL[a.status], a.reason, testsOf(a).length, m.spend, m.revenue, m.roas && +m.roas.toFixed(2), finalCls(a)]); });
-    download('shippingcaps-consolidated-' + new Date().toISOString().slice(0, 10) + '.csv', csv(rows));
+    const rows = [TEST_HEAD.slice(0, 13).concat(['Tests', 'Spend (BRL)', 'Impressions', 'Clicks', 'Conversions', 'Attributed revenue (BRL)', 'CTR (%)', 'CPC (BRL)', 'CPM (BRL)', 'CPA (BRL)', 'ROAS', 'Final classification'])];
+    list.forEach((a) => {
+      const o = offer(a.offer); const ts = testsOf(a).filter((x) => inPeriod(x, UI.rep.f)); const m = metrics(ts); const fc = finalCls(a);
+      rows.push(offerBase(o, a).concat(adCells(a).slice(0, 4), [ts.length, csvNum(m.spend, 2), m.impressions, m.clicks, m.conversions, csvNum(m.revenue, 2), csvNum(m.ctr == null ? null : m.ctr * 100, 2), csvNum(m.cpc, 2), csvNum(m.cpm, 2), csvNum(m.cpa, 2), csvNum(m.roas, 2), fc === 'effective' ? 'Successful' : fc === 'not_effective' ? 'Unsuccessful' : 'No data']));
+    });
+    download('shippingcaps-consolidado-' + new Date().toISOString().slice(0, 10) + '.csv', csv(rows));
+  }
+
+  // ---- PDF (jsPDF carregado só quando alguém pede um PDF) ----
+  let pdfLib = null;
+  const loadScript = (src) => new Promise((res, rej) => { const el = document.createElement('script'); el.src = src; el.onload = res; el.onerror = () => rej(new Error(t('The PDF library did not load. Check the internet and try again.'))); document.head.appendChild(el); });
+  async function jsPDFLib() {
+    if (!pdfLib) {
+      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
+      pdfLib = window.jspdf.jsPDF;
+    }
+    return pdfLib;
+  }
+  const pdfText = (v) => String(v == null ? '' : v).replace(/→/g, '->').replace(/[—–]/g, '-').replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/\u00a0|\u202f/g, ' ').normalize('NFC').replace(/[^\x09\x0a\x0d\x20-\x7e\xa0-\xff]/g, '');
+  const brl = (v) => (v == null || !isFinite(v) ? 'No data' : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v));
+  const intf = (v) => (v == null ? 'No data' : new Intl.NumberFormat('pt-BR').format(v));
+  const ratio = (v, kind) => (v == null || !isFinite(v) ? 'Not calculable' : kind === 'pct' ? new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 }).format(v * 100) + '%' : kind === 'x' ? new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 }).format(v) + 'x' : brl(v));
+  const ddmm = (d) => (d ? new Date(d.length === 10 ? d + 'T12:00:00' : d).toLocaleDateString('pt-BR') : '');
+  const ddmmhh = (d) => (d ? new Date(d).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '');
+  function performanceOf(ads, tests) {
+    const ids = new Set(ads.map((a) => a.id)); const ts = tests.filter((x) => ids.has(x.ad));
+    const finals = ads.map((a) => { const c = ts.filter((x) => x.ad === a.id && x.cls).sort((x, y) => (y.end || '').localeCompare(x.end || '')); return c.length ? c[0].cls : null; });
+    const classified = finals.filter(Boolean).length; const ok = finals.filter((c) => c === 'effective').length;
+    return { m: metrics(ts), tested: new Set(ts.map((x) => x.ad)).size, classified, ok, registered: ads.length, running: ts.filter((x) => !x.end).length, finished: ts.filter((x) => x.end).length, rate: classified ? ok / classified : null };
+  }
+  const indicatorRows = (p) => [
+    ['Success rate', ratio(p.rate, 'pct'), 'Ads tested', intf(p.tested)], ['Classified ads', intf(p.classified), 'Successful ads', intf(p.ok)],
+    ['Registered ads', intf(p.registered), 'Tests in progress', intf(p.running)], ['Completed tests', intf(p.finished), 'Spend', brl(p.m.spend)],
+    ['Attributed revenue', brl(p.m.revenue), 'ROAS', ratio(p.m.roas, 'x')], ['CPA', ratio(p.m.cpa, 'brl'), 'CTR', ratio(p.m.ctr, 'pct')], ['CPC', ratio(p.m.cpc, 'brl'), 'CPM', ratio(p.m.cpm, 'brl')]];
+  async function pdfDoc() {
+    const J = await jsPDFLib(); const doc = new J({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const M = { top: 29, bottom: 17, left: 12, right: 12 }; let y = 31;
+    const table = (title, head, body, fs) => {
+      doc.autoTable({ startY: y, head: [[pdfText(title)]], body: [], theme: 'plain', styles: { fontSize: 11, fontStyle: 'bold', textColor: 20 }, margin: M });
+      y = doc.lastAutoTable.finalY + 2;
+      doc.autoTable({ startY: y, head: head.length ? [head.map(pdfText)] : [], body: body.map((r) => r.map(pdfText)), theme: 'grid', styles: { font: 'helvetica', fontSize: fs || 8, cellPadding: 2.5, textColor: 20, lineColor: 210, overflow: 'linebreak' }, headStyles: { fillColor: 235, textColor: 20, fontStyle: 'bold' }, alternateRowStyles: { fillColor: 249 }, margin: M, rowPageBreak: 'avoid' });
+      y = doc.lastAutoTable.finalY + 7;
+    };
+    const finish = (name) => {
+      const n = doc.getNumberOfPages(); const by = pdfText('Generated at ' + ddmmhh(new Date().toISOString()) + ' by ' + me().name);
+      for (let p = 1; p <= n; p++) { doc.setPage(p); doc.setTextColor(20); doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.text('ShippingCaps - Traffic Management', 12, 13); doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.text(by, 12, 20); doc.text('Page ' + p + ' of ' + n, 285, 202, { align: 'right' }); }
+      doc.save(name);
+    };
+    return { table, finish };
+  }
+  async function pdfOffer(o) {
+    let comments = DB.comments.filter((c) => c.offer === o.id), history = DB.activity.filter((l) => l.offer === o.id);
+    if (LIVE) { const x = await LIVE.offerExtras(o.id); comments = x.comments; history = x.activity; }
+    const ads = offerAds(o); const tests = DB.tests.filter((x) => ads.some((a) => a.id === x.ad));
+    const period = tests.length ? ddmm(tests.map((x) => x.start).sort()[0]) + ' - ' + (tests.some((x) => !x.end) ? 'in progress' : ddmm(tests.map((x) => x.end).sort().pop())) : 'No tests recorded';
+    const pdf = await pdfDoc();
+    pdf.table('#' + o.number + ' - ' + o.name, [], [
+      ['Niche', nicheName(o.niche) || 'No data', 'Assignee', personName(o.assignee)], ['Product', o.products.map(catLabel).join(' · '), 'VSL', o.vsls.map(catLabel).join(' · ')],
+      ['Mechanism', o.mechanisms.map(catLabel).join(' · ') || 'No mechanism', '', ''], ['Channel', catLabel(o.channel), 'Drive link', o.drive], ['Ads', intf(ads.length), 'Test period', period]]);
+    pdf.table('Performance metrics', [], indicatorRows(performanceOf(ads, tests)));
+    pdf.table('Note', [], [["Success rate measures the team's classifications; it is not proof of profit or automatic validation"]]);
+    pdf.table('VSLs and ad origins', ['Ad', 'Execution VSL', 'Origin'], ads.map((a) => [a.name, adVsls(a).map(catLabel).join(' · '), a.origin ? 'Reused from ' + (((a.sourceLabels || []).join(' · ')) || (ad(a.origin) || {}).name || 'previous VSL') : 'Original']));
+    const rows = [];
+    ads.forEach((a) => { const ts = testsOf(a); if (!ts.length) rows.push([a.name, HUB_STATUS[a.status], catLabel(a.channel), 'No tests', '', '', '', '', '', '', '', '', '', '']); ts.forEach((x) => { const m = metrics([x]); rows.push([a.name, HUB_STATUS[a.status], catLabel(a.channel), ddmm(x.start), x.end ? ddmm(x.end) : 'Testing', brl(x.spend), intf(x.impressions), intf(x.clicks), intf(x.conversions), brl(x.revenue), ratio(m.ctr, 'pct'), ratio(m.cpa, 'brl'), ratio(m.roas, 'x'), clsText(x)]); }); });
+    pdf.table('Ads and tests', ['Ad', 'Ad status', 'Ad channel', 'Start', 'End', 'Spend (BRL)', 'Impressions', 'Clicks', 'Conversions', 'Revenue (BRL)', 'CTR', 'CPA', 'ROAS', 'Classification'], rows.length ? rows : [['No registered ads']], 7);
+    const reps = comments.filter((c) => c.kind === 'report');
+    pdf.table('Report comments', ['Author', 'Date', 'General summary', 'What sold', 'What did not work', 'Next step'], reps.length ? reps.map((c) => [personName(c.author), ddmmhh(c.at), c.body, c.sold || 'No data', c.failed || 'No data', c.next || 'No data']) : [['No reports recorded']]);
+    const changes = history.filter((l) => l.action === 'status_anuncio_alterado' || l.action === 'ad_status').sort((a, b) => a.at.localeCompare(b.at));
+    pdf.table('Status change history', ['Date', 'User', 'Ad', 'From -> To'], changes.length ? changes.map((l) => { const from = l.from || (l.d || {}).from, to = l.to || (l.d || {}).to; return [ddmmhh(l.at), l.actor ? personName(l.actor) : 'System', (l.d || {}).nome || (l.d || {}).ad || 'No data', (from ? HUB_STATUS[from] : 'No data') + ' -> ' + (to ? HUB_STATUS[to] : 'No data')]; }) : [['No status changes recorded']]);
+    pdf.finish(slug('oferta-' + o.number + '-' + o.name) + '-' + new Date().toISOString().slice(0, 10) + '.pdf');
+  }
+  async function pdfAll() {
+    const f = UI.rep.f; const ads = applyFilters(visibleAds(), f); const tests = DB.tests.filter((x) => inPeriod(x, f));
+    const desc = [f.q && 'Search: ' + f.q, f.product && 'Product: ' + catLabel(f.product), f.vsls && f.vsls.length && 'VSL: ' + f.vsls.map(catLabel).join(', '), f.mechs && f.mechs.length && 'Mechanism: ' + f.mechs.map(catLabel).join(', '), f.channel && 'Channel: ' + catLabel(f.channel), f.assignee && 'Assignee: ' + personName(f.assignee), f.niche && 'Niche: ' + nicheName(f.niche), f.status && 'Status: ' + HUB_STATUS[f.status], (f.tFrom || f.tTo) && 'Test start: ' + (f.tFrom ? ddmm(f.tFrom) : '...') + ' - ' + (f.tTo ? ddmm(f.tTo) : '...'), f.archived && 'Including archived'].filter(Boolean).join(' · ') || 'No filters';
+    const pdf = await pdfDoc();
+    pdf.table('Consolidated report - applied filters', [], [[desc]]);
+    pdf.table(new Set(ads.map((a) => a.offer)).size + ' offers - Overall totals', [], indicatorRows(performanceOf(ads, tests)));
+    pdf.table('Note', [], [["Success rate measures the team's classifications; it is not proof of profit or automatic validation"]]);
+    pdf.table('Performance by ad', ['Demand', 'Ad', 'Niche', 'Product', 'VSL', 'Mechanism', 'Channel', 'Assignee', 'Ad status', 'Tested', 'Successful', 'Spend', 'Revenue', 'ROAS'], ads.length ? ads.map((a) => { const o = offer(a.offer); const p = performanceOf([a], tests); return [o.number, a.name, nicheName(o.niche) || 'No data', adProducts(a).map(catLabel).join(' · '), adVsls(a).map(catLabel).join(' · '), o.mechanisms.map(catLabel).join(' · ') || '-', catLabel(o.channel), personName(o.assignee), HUB_STATUS[a.status], intf(p.tested), intf(p.ok), brl(p.m.spend), brl(p.m.revenue), ratio(p.m.roas, 'x')]; }) : [['No ads found']], 7);
+    pdf.finish('shippingcaps-consolidado-' + new Date().toISOString().slice(0, 10) + '.pdf');
+  }
+
+  // ---------- demanda por lista de ads ----------
+  const listKey = (v) => String(v).replace(/\.[A-Za-z0-9]{2,5}$/, '').replace(/\s+/g, '').toLowerCase();
+  const isVideo = (f) => (f.mime ? f.mime.startsWith('video/') : /\.(mp4|mov|m4v|webm|avi|mkv)$/i.test(f.name));
+  function matchAdList(text) {
+    const entries = splitLines(text).map((raw) => { const m = raw.match(/drive\.google\.com\/file\/d\/([\w-]+)/); return { raw, fileId: m ? m[1] : null, name: m ? raw.replace(/https?:\/\/\S+/g, '').trim() || null : raw }; });
+    const avail = DB.files.filter((f) => !f.removed && isVideo(f));
+    const byId = new Map(avail.map((f) => [f.fileId || f.id, f]));
+    const byName = new Map(); avail.forEach((f) => { const k = listKey(f.name); if (!byName.has(k)) byName.set(k, []); byName.get(k).push(f); });
+    const taken = new Set();
+    return entries.map((e) => {
+      let f = null;
+      if (e.fileId) f = byId.get(e.fileId) || null;
+      else if (e.name) { const c = byName.get(listKey(e.name)) || []; f = c.find((x) => !x.ad && !taken.has(x.id)) || c.find((x) => !taken.has(x.id)) || null; }
+      if (!f || taken.has(f.id)) return { e, f: null, st: 'missing' };
+      taken.add(f.id);
+      return { e, f, st: f.ad ? 'used' : 'found' };
+    });
+  }
+  function listResults(ms) {
+    const by = (st) => ms.filter((m) => m.st === st);
+    const usedIn = (f) => { const a = ad(f.ad); const o = a && offer(a.offer); return o ? '#' + o.number : '—'; };
+    const batchName = (f) => (DB.batches.find((b) => b.id === f.batch) || {}).name || '';
+    return `<div class="lr"><p class="lr-h ok">${esc(t('Found'))} <b>${by('found').length}</b></p>${by('found').map((m) => `<label class="lr-i"><input type="checkbox" name="files" value="${m.f.id}" checked><span>${esc(m.f.name)}</span><small>${esc(batchName(m.f))}</small></label>`).join('')}
+      ${by('used').length ? `<p class="lr-h warn">${esc(t('Already used in another demand'))} <b>${by('used').length}</b></p>${by('used').map((m) => `<div class="lr-i off"><span>${esc(m.f.name)}</span><small>${esc(usedIn(m.f))}</small></div>`).join('')}` : ''}
+      ${by('missing').length ? `<p class="lr-h err">${esc(t('Not found in Drive'))} <b>${by('missing').length}</b></p>${by('missing').map((m) => `<div class="lr-i off"><span>${esc(m.e.raw)}</span></div>`).join('')}` : ''}</div>`;
+  }
+  function adListModal() {
+    const today = new Date().toLocaleDateString(loc(), { day: '2-digit', month: '2-digit' });
+    openModal(t('Demand from ad list'), `<p class="muted">${esc(t('Paste one ad per line: the file name or the Drive link. The site finds the videos already read from Drive and creates one ad per video.'))}</p>
+      ${field(t('Ad list'), `<textarea name="list" class="list-in" placeholder="VARAD14H2\nhttps://drive.google.com/file/d/…"></textarea>`, 'full')}
+      <div><button type="button" class="btn ghost sm" data-a="checkList">${IC.search}${esc(t('Check list'))}</button></div>
+      <div id="list-res"></div>
+      <div class="mgrid">
+        ${field(t('Name'), `<input name="name" required value="${esc(t('Ad list') + ' — ' + today)}">`, 'full')}
+        ${field(t('Drive folder link'), `<input name="drive" type="url" required placeholder="https://drive.google.com/…">`, 'full')}
+        ${field(t('Products'), checks('products', activeOpts('product'), []), 'full')}
+        ${field('VSLs', checks('vsls', activeOpts('vsl'), []), 'full')}
+        ${field(t('Mechanisms'), checks('mechanisms', activeOpts('mechanism'), []), 'full')}
+        ${field(t('Channel'), `<select name="channel">${options(activeOpts('channel'), '')}</select>`)}
+        ${field(t('Niche'), `<select name="niche" required>${options(DB.niches.map((n) => [n.id, nicheLabel(n.id)]), '', t('Choose'))}</select>`)}
+        ${field(t('Manager'), `<select name="assignee" required>${options(mgrOpts(), '', t('Choose'))}</select>`)}
+        ${field(t('Deadline'), `<input type="date" name="deadline">`)}
+      </div>`, (fd) => {
+      const ids = fd.getAll('files'); const files = ids.map((id) => DB.files.find((f) => f.id === id)).filter(Boolean);
+      if (!files.length) return mErr(t('Check the list and keep at least one video selected.'));
+      const d = { name: (fd.get('name') || '').trim(), drive: (fd.get('drive') || '').trim(), products: fd.getAll('products'), vsls: fd.getAll('vsls'), mechanisms: fd.getAll('mechanisms'), channel: fd.get('channel'), niche: fd.get('niche'), assignee: fd.get('assignee'), deadline: fd.get('deadline') || null, description: '', notes: '' };
+      if (!d.name) return mErr(t('Give the demand a name.'));
+      if (!/^https:\/\//.test(d.drive)) return mErr(t('The Drive link must start with https://'));
+      if (!d.products.length || !d.vsls.length || !d.mechanisms.length) return mErr(t('Pick at least one product, one VSL and one mechanism.'));
+      if (!d.niche || !d.assignee) return mErr(t('Pick the niche and the manager.'));
+      if (LIVE) {
+        const btn = modalRoot.querySelector('footer .btn.primary'); btn.disabled = true;
+        return (async () => {
+          let saved = null;
+          try {
+            saved = await LIVE.saveOffer(null, d);
+            await LIVE.linkFiles(saved.id, files.map((f) => f.fileId));
+            closeModal(); await reload(); toast(t('Demand #{n} created with {a} ads', { n: saved.number, a: files.length })); go('#/demand/' + saved.id);
+          } catch (e) { btn.disabled = false; if (saved) { closeModal(); await reload(); toast(t('Demand #{n} saved, but the ads were not imported: {e}', { n: saved.number, e: errText(e) })); } else mErr(t('Not saved: {e}', { e: errText(e) })); }
+        })();
+      }
+      const n = String(Math.max(0, ...DB.offers.map((x) => +x.number)) + 1).padStart(4, '0');
+      const o = Object.assign({ id: uid('o'), number: n, created: now(), archived: null, source: null }, d, { deadline: d.deadline ? d.deadline + 'T23:59:00' : null });
+      DB.offers.push(o); log(o.id, 'offer_created', { name: o.name }); log(o.id, 'assigned', { to: o.assignee }); notify(o.assignee, o.id, 'assigned');
+      files.forEach((f) => { const a = { id: uid('a'), offer: o.id, name: f.name.replace(/\.[^.]+$/, ''), channel: o.channel, link: 'https://drive.google.com/file/d/' + (f.fileId || f.id) + '/view', status: 'test', changed: now(), reason: '', created: now(), trashed: null, trashPrev: null, origin: null, targetVsl: null, targetProducts: null }; DB.ads.push(a); f.ad = a.id; });
+      log(o.id, 'list_imported', { n: files.length });
+      commit(); closeModal(); toast(t('Demand #{n} created with {a} ads', { n, a: files.length })); go('#/demand/' + o.id);
+    }, { wide: true, ok: t('Create demand') });
   }
 
   // ---------- Drive: ações ----------
@@ -1126,7 +1314,9 @@
     newOffer: () => offerModal(null),
     editOffer: (el) => offerModal(offer(el.dataset.id)),
     archive: (el) => { const o = offer(el.dataset.id); o.archived = o.archived ? null : now(); log(o.id, o.archived ? 'archived' : 'unarchived'); commit(); remote(() => LIVE.archive(o.id, !!o.archived)); toast(o.archived ? t('Demand archived') : t('Demand restored')); render(); },
-    csvOffer: (el) => csvOffer(offer(el.dataset.id)),
+    csvOffer: (el) => csvOffer(offer(el.dataset.id), el.dataset.period ? UI.rep.f : null),
+    pdfOffer: (el) => { toast(t('Building the PDF…')); pdfOffer(offer(el.dataset.id)).catch((e) => toast(t('PDF failed: {e}', { e: errText(e) }))); },
+    pdfAll: () => { toast(t('Building the PDF…')); pdfAll().catch((e) => toast(t('PDF failed: {e}', { e: errText(e) }))); },
     csvAll: () => csvAll(),
     print: () => window.print(),
     toggleAd: (el) => { const id = el.dataset.id; UI.openAds.has(id) ? UI.openAds.delete(id) : UI.openAds.add(id); render(); },
@@ -1138,6 +1328,9 @@
       log(o.id, 'ad_created', { ad: name }); commit(); closeModal(); toast(t('Ad created in Test')); render();
     }); },
     newTest: (el) => testModal(ad(el.dataset.id)),
+    editTest: (el) => { const x = DB.tests.find((y) => y.id === el.dataset.id); if (x) testModal(ad(x.ad), x); },
+    editAd: (el) => adModal(ad(el.dataset.id)),
+    editComment: (el) => { UI.editComment = UI.editComment === el.dataset.id ? null : el.dataset.id; render(); },
     delTest: (el) => {
       const x = DB.tests.find((y) => y.id === el.dataset.id);
       if (LIVE) return openModal(t('Delete test'), `<p>${esc(t('This test will be deleted from the real database.'))}</p>`, () => { DB.tests = DB.tests.filter((y) => y !== x); closeModal(); render(); remote(() => LIVE.deleteTest(x.id)); toast(t('Test deleted')); }, { danger: true, ok: t('Delete') });
@@ -1149,6 +1342,17 @@
     perfBar: (el) => { UI.rep.f = Object.assign({}, UI.perf.f, { status: el.dataset.s }); go('#/reports'); },
     driveTab: (el) => { UI.drive.tab = el.dataset.v; UI.drive.sel.clear(); render(); },
     selFolder: (el) => { DB.batches.filter((b) => b.source === el.dataset.id && b.status === UI.drive.tab && !b.removed).forEach((b) => UI.drive.sel.add(b.id)); render(); },
+    adList: () => adListModal(),
+    checkList: () => {
+      const m = modalRoot.querySelector('textarea[name=list]'); const box = document.getElementById('list-res');
+      const ms = matchAdList(m.value);
+      if (!ms.length) { box.innerHTML = `<p class="merr">${esc(t('Paste at least one line.'))}</p>`; return; }
+      box.innerHTML = listResults(ms);
+      const first = ms.find((x) => x.st === 'found');
+      const drive = modalRoot.querySelector('input[name=drive]');
+      if (first && !drive.value) { const b = DB.batches.find((x) => x.id === first.f.batch); if (b && b.folder) drive.value = 'https://drive.google.com/drive/folders/' + b.folder; }
+      if (first) { const b = DB.batches.find((x) => x.id === first.f.batch); const src = b && DB.sources.find((x) => x.id === b.source); if (src) { if (src.product) { const c = modalRoot.querySelector(`input[name=products][value="${src.product}"]`); if (c) c.checked = true; } if (src.niche) modalRoot.querySelector('select[name=niche]').value = src.niche; if (src.channel) modalRoot.querySelector('select[name=channel]').value = src.channel; } }
+    },
     scan: () => {
       if (LIVE) return window.open(window.HUB_URL + '/entrada-drive', '_blank', 'noopener');
       const s =DB.sources.filter((x) => x.active)[Math.floor(Math.random() * DB.sources.filter((x) => x.active).length)];
@@ -1298,13 +1502,13 @@
       if (!body && !(kind === 'report' && (fd.get('sold') || fd.get('failed') || fd.get('next')))) return;
       const offerId = parent ? parent.offer : f.dataset.id;
       f.querySelectorAll('button').forEach((b) => { b.disabled = true; });
-      return LIVE.insertComment({ offer: offerId, kind, body, sold: fd.get('sold'), failed: fd.get('failed'), next: fd.get('next'), test: parent ? null : fd.get('test'), parent: parent ? parent.id : null })
+      return LIVE.insertComment({ offer: offerId, kind, body, sold: fd.get('sold'), failed: fd.get('failed'), next: fd.get('next'), links: splitLines(fd.get('links')), test: parent ? null : fd.get('test'), parent: parent ? parent.id : null })
         .then(async () => { UI.replyTo = null; await loadExtras(offerId); toast(t('Posted')); })
         .catch((e) => { f.querySelectorAll('button').forEach((b) => { b.disabled = false; }); toast(t('Not saved: {e}', { e: errText(e) })); });
     }
     if (k === 'comment') {
       const o = offer(f.dataset.id); const kind = fd.get('kind'); const body = (fd.get('body') || '').trim(); if (!body) return;
-      DB.comments.push({ id: uid('c'), offer: o.id, parent: null, kind, body, sold: kind === 'report' ? fd.get('sold') : '', failed: kind === 'report' ? fd.get('failed') : '', next: kind === 'report' ? fd.get('next') : '', links: [], author: UI.user, at: now(), edited: null, test: fd.get('test') || null });
+      DB.comments.push({ id: uid('c'), offer: o.id, parent: null, kind, body, sold: kind === 'report' ? fd.get('sold') : '', failed: kind === 'report' ? fd.get('failed') : '', next: kind === 'report' ? fd.get('next') : '', links: splitLines(fd.get('links')), author: UI.user, at: now(), edited: null, test: fd.get('test') || null });
       log(o.id, kind === 'report' ? 'report_added' : 'comment_added');
       notify(o.assignee, o.id, kind === 'report' ? 'report' : 'comment'); DB.users.filter((u) => u.role === 'admin').forEach((u) => notify(u.id, o.id, kind === 'report' ? 'report' : 'comment'));
       commit(); toast(t('Posted')); return render();
@@ -1313,6 +1517,17 @@
       const p = DB.comments.find((c) => c.id === f.dataset.id); const body = (fd.get('body') || '').trim(); if (!body) return;
       DB.comments.push({ id: uid('c'), offer: p.offer, parent: p.id, kind: 'update', body, sold: '', failed: '', next: '', links: [], author: UI.user, at: now(), edited: null });
       notify(p.author, p.offer, 'comment'); UI.replyTo = null; commit(); return render();
+    }
+    if (k === 'editComment') {
+      const c = DB.comments.find((x) => x.id === f.dataset.id); if (!c) return;
+      const v = { kind: c.kind, body: (fd.get('body') || '').trim(), sold: (fd.get('sold') || '').trim(), failed: (fd.get('failed') || '').trim(), next: (fd.get('next') || '').trim(), links: splitLines(fd.get('links')) };
+      if (!v.body && !(c.kind === 'report' && (v.sold || v.failed || v.next))) return toast(t('Write the comment or the report.'));
+      if (LIVE) {
+        f.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+        return LIVE.updateComment(c.id, v).then(async () => { UI.editComment = null; await loadExtras(c.offer); toast(t('Comment updated')); })
+          .catch((e) => { f.querySelectorAll('button').forEach((b) => { b.disabled = false; }); toast(t('Not saved: {e}', { e: errText(e) })); });
+      }
+      Object.assign(c, v, { edited: now() }); UI.editComment = null; commit(); toast(t('Comment updated')); return render();
     }
   });
   document.addEventListener('keydown', (e) => {

@@ -74,7 +74,7 @@
         const chunks = [];
         for (let i = 0; i < ids.length; i += 100) chunks.push(ids.slice(i, i + 100));
         for (let i = 0; i < chunks.length; i += 6) {
-          const part = await Promise.all(chunks.slice(i, i + 6).map((c) => all(() => sb.from('drive_files').select('id,batch_id,file_id,name,size_bytes,drive_created_at,ad_id,removed_at').in('batch_id', c).order('name').order('id'))));
+          const part = await Promise.all(chunks.slice(i, i + 6).map((c) => all(() => sb.from('drive_files').select('id,batch_id,file_id,name,mime_type,size_bytes,drive_created_at,ad_id,removed_at').in('batch_id', c).order('name').order('id'))));
           part.forEach((p) => files.push(...p));
         }
       }
@@ -105,7 +105,7 @@
         notifications: notifs.map((n) => ({ id: n.id, user: n.user_id, at: n.created_at, offer: n.offer_id, type: n.type, title: n.title, body: n.body, read: !!n.read_at })),
         sources: sources.map((s) => ({ id: s.id, name: s.name, path: s.drive_path || '', folder: s.folder_id, product: s.product_id, niche: s.niche_id, channel: s.channel_id, active: s.active, discovered: s.discovered, since: s.track_since, lastScan: s.last_scan_at, error: visibleDriveError(s.last_error) })),
         batches: batches.map((b) => ({ id: b.id, source: b.source_id, folder: b.folder_id, name: b.name, status: BATCH_IN[b.status] || b.status, reason: REASON_IN[b.ignored_reason] || null, offer: b.offer_id, removed: b.removed_at, arrived: b.first_seen_at })),
-        files: files.map((f) => ({ id: f.id, batch: f.batch_id, fileId: f.file_id, name: f.name, size: f.size_bytes || 0, at: f.drive_created_at, ad: f.ad_id, removed: f.removed_at })),
+        files: files.map((f) => ({ id: f.id, batch: f.batch_id, fileId: f.file_id, name: f.name, mime: f.mime_type || '', size: f.size_bytes || 0, at: f.drive_created_at, ad: f.ad_id, removed: f.removed_at })),
         tasks: [],
         integrations: integrations.map((x) => ({ platform: x.platform, status: x.status, last: x.last_sync_at })),
         scans: { auto: sources.reduce((m, s) => (s.last_scan_at && (!m || s.last_scan_at > m) ? s.last_scan_at : m), null), manual: null },
@@ -156,9 +156,14 @@
     async insertTest(x) {
       must(await sb.from('ad_tests').insert({ ad_id: x.ad, offer_id: x.offer, start_date: x.start, end_date: x.end, spend: x.spend, revenue: x.revenue, impressions: x.impressions, clicks: x.clicks, conversions: x.conversions, classification: x.cls === 'effective' ? 'assertivo' : x.cls === 'not_effective' ? 'nao_assertivo' : null, notes: x.notes || null }).select('id').single());
     },
+    async updateAd(id, a) { must(await sb.from('ads').update({ name: a.name, channel_id: a.channel, platform_ad_id: a.platformId || null, link: a.link || null }).eq('id', id).select('id').single()); },
+    testPayload(x) { return { start_date: x.start, end_date: x.end, spend: x.spend, revenue: x.revenue, impressions: x.impressions, clicks: x.clicks, conversions: x.conversions, classification: x.cls === 'effective' ? 'assertivo' : x.cls === 'not_effective' ? 'nao_assertivo' : null, notes: x.notes || null }; },
+    async updateTest(id, x) { must(await sb.from('ad_tests').update(L.testPayload(x)).eq('id', id).select('id').single()); },
+    async updateComment(id, c) { must(await sb.from('comments').update({ body: c.body, what_sold: c.kind === 'report' ? c.sold || null : null, what_failed: c.kind === 'report' ? c.failed || null : null, next_step: c.kind === 'report' ? c.next || null : null, links: c.links || [] }).eq('id', id).select('id').single()); },
+    async linkFiles(offerId, fileIds) { return must(await sb.rpc('link_drive_files', { _offer_id: offerId, _file_ids: fileIds })); },
     async deleteTest(id) { must(await sb.from('ad_tests').delete().eq('id', id).select('id')); },
     async insertComment(c) {
-      must(await sb.from('comments').insert({ offer_id: c.offer, kind: c.kind === 'report' ? 'relatorio' : 'acompanhamento', body: c.body, what_sold: c.kind === 'report' ? c.sold || null : null, what_failed: c.kind === 'report' ? c.failed || null : null, next_step: c.kind === 'report' ? c.next || null : null, links: [], test_id: c.test || null, parent_id: c.parent || null }).select('id').single());
+      must(await sb.from('comments').insert({ offer_id: c.offer, kind: c.kind === 'report' ? 'relatorio' : 'acompanhamento', body: c.body, what_sold: c.kind === 'report' ? c.sold || null : null, what_failed: c.kind === 'report' ? c.failed || null : null, next_step: c.kind === 'report' ? c.next || null : null, links: c.links || [], test_id: c.test || null, parent_id: c.parent || null }).select('id').single());
     },
     async readNotifications(id) { let q = sb.from('notifications').update({ read_at: new Date().toISOString() }).eq('user_id', L.me.id).is('read_at', null); if (id) q = q.eq('id', id); must(await q); },
     async linkBatch(batchId, offerId) { return must(await sb.rpc('link_drive_batch', { _batch_id: batchId, _offer_id: offerId })); },

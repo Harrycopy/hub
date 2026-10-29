@@ -682,3 +682,22 @@ kbd { display: inline-block; padding: 1px 6px; border: 1px solid var(--line2); b
 .auth-tools { display: flex; gap: 8px; margin-top: 18px; }
 .tool.theme-b span { font: 600 11px var(--ff); color: var(--fg2); }
 @media (max-width: 760px) { .tool.theme-b span { display: none; } }
+
+/* lista de ads, links e edição de comentário */
+.list-in { min-height: 120px !important; font-family: var(--fm) !important; font-size: 12px !important; }
+.lr { display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow: auto; padding: 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg2); }
+.lr-h { margin: 6px 0 2px; font: 600 11px var(--fm); letter-spacing: .08em; text-transform: uppercase; }
+.lr-h.ok { color: var(--ok); } .lr-h.warn { color: var(--yellow-ink); } .lr-h.err { color: var(--danger); }
+.lr-i { display: flex; align-items: center; gap: 8px; font: 12px var(--fm); padding: 3px 4px; border-radius: 5px; }
+.lr-i small { margin-left: auto; color: var(--mute); }
+.lr-i.off { opacity: .7; }
+.lr-i input { accent-color: var(--primary); }
+.links-in { min-height: 54px !important; font-size: 12.5px !important; }
+.cm-links { list-style: none; padding: 0; margin: 6px 0; display: flex; flex-direction: column; gap: 3px; }
+.cm-a { display: flex; gap: 14px; }
+.edit-f { display: flex; flex-direction: column; gap: 8px; margin: 9px 0; }
+.edit-f textarea, .edit-f input { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg2); color: var(--fg); font-size: 13px; }
+.edit-f textarea[name=body] { min-height: 80px; }
+.rep-fields.on { display: grid; }
+.test-a { margin-left: auto; display: inline-flex; gap: 12px; }
+.test-h .link { margin-left: 0; }
