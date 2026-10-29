@@ -147,9 +147,13 @@
       return canSee(offer(a.offer));
     });
   }
+  // busca tolerante: ignora acento, maiúscula, espaço e o "Cópia de" que o Drive põe no nome do arquivo
+  const fold = (s) => String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const compact = (s) => fold(s).replace(/copia de\s*/g, '').replace(/\s+/g, '');
+  const looseMatch = (hay, q) => fold(hay).includes(fold(q).trim()) || compact(hay).includes(compact(q));
   function applyFilters(list, f, opts) {
     opts = opts || {};
-    const q = (f.q || '').trim().toLowerCase();
+    const q = (f.q || '').trim();
     return list.filter((a) => {
       const o = offer(a.offer);
       if (o.archived && !f.archived) return false;
@@ -169,8 +173,8 @@
       }
       if (q) {
         const hay = [a.name, o.name, '#' + o.number, o.number, adProducts(a).map(catLabel).join(' '), adVsls(a).map(catLabel).join(' '),
-          o.mechanisms.map(catLabel).join(' '), (user(o.assignee) || {}).name, catLabel(a.channel)].join(' ').toLowerCase();
-        if (!hay.includes(q)) return false;
+          o.mechanisms.map(catLabel).join(' '), (user(o.assignee) || {}).name, catLabel(a.channel)].join(' | ');
+        if (!looseMatch(hay, q)) return false;
       }
       return true;
     }).sort((x, y) => naturalCmp(adTitle(x), adTitle(y)));
@@ -1036,8 +1040,8 @@
     const q = document.getElementById('pal-q'), L = document.getElementById('pal-l');
     let idx = 0, shown = [];
     const draw = () => {
-      const s = q.value.trim().toLowerCase();
-      shown = items.filter((x) => !s || x.l.toLowerCase().includes(s)).slice(0, 12);
+      const s = q.value.trim();
+      shown = items.filter((x) => !s || looseMatch(x.l, s)).slice(0, 12);
       idx = Math.min(idx, Math.max(0, shown.length - 1));
       L.innerHTML = shown.map((x, i) => `<a href="${x.h}" class="${i === idx ? 'on' : ''}"><span>${esc(x.l)}</span><small>${esc(x.k)}</small></a>`).join('') || `<p class="empty-s">${esc(t('Nothing found.'))}</p>`;
     };
@@ -1178,7 +1182,7 @@
   }
 
   // ---------- demanda por lista de ads ----------
-  const listKey = (v) => String(v).replace(/\.[A-Za-z0-9]{2,5}$/, '').replace(/\s+/g, '').toLowerCase();
+  const listKey = (v) => compact(String(v).replace(/\.[A-Za-z0-9]{2,5}$/, ''));
   const isVideo = (f) => (f.mime ? f.mime.startsWith('video/') : /\.(mp4|mov|m4v|webm|avi|mkv)$/i.test(f.name));
   function matchAdList(text) {
     const entries = splitLines(text).map((raw) => { const m = raw.match(/drive\.google\.com\/file\/d\/([\w-]+)/); return { raw, fileId: m ? m[1] : null, name: m ? raw.replace(/https?:\/\/\S+/g, '').trim() || null : raw }; });
