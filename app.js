@@ -31,7 +31,7 @@
   const qp = new URLSearchParams(location.search);
   if (!LIVE && qp.get('as') && DB.users.some((u) => u.id === qp.get('as'))) UI.user = qp.get('as');
   if (qp.get('lang') === 'pt' || qp.get('lang') === 'en') UI.lang = qp.get('lang');
-  if (qp.get('theme') === 'light') document.documentElement.dataset.theme = 'light';
+  if (['sand', 'light', 'dark'].includes(qp.get('theme'))) { if (qp.get('theme') === 'dark') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = qp.get('theme'); }
   const commit = () => { if (!LIVE) store.set(LS, DB); };
   const saveUI = () => store.set(LS_UI, { lang: UI.lang, user: LIVE ? null : UI.user, pipeView: UI.pipe.view });
 
@@ -300,8 +300,12 @@
     sun: I('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'),
     moon: I('<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z"/>'),
   };
-  const isLight = () => document.documentElement.dataset.theme === 'light';
-  const themeBtn = (cls) => `<button type="button" class="tool ${cls || ''}" data-a="theme" title="${esc(isLight() ? t('Dark background') : t('White background'))}" aria-label="${esc(isLight() ? t('Dark background') : t('White background'))}">${isLight() ? IC.moon : IC.sun}</button>`;
+  // três temas: Areia (padrão), Azul e Escuro; o botão passa para o próximo
+  const THEMES = ['sand', 'light', 'dark'];
+  const THEME_NAME = { sand: 'Sand', light: 'Blue', dark: 'Dark' };
+  const curTheme = () => document.documentElement.dataset.theme || 'dark';
+  const nextTheme = () => THEMES[(THEMES.indexOf(curTheme()) + 1) % THEMES.length];
+  const themeBtn = (cls) => `<button type="button" class="tool theme-b ${cls || ''}" data-a="theme" title="${esc(t('Theme: {a} · next: {b}', { a: t(THEME_NAME[curTheme()]), b: t(THEME_NAME[nextTheme()]) }))}" aria-label="${esc(t('Change theme'))}">${curTheme() === 'dark' ? IC.moon : IC.sun}<span>${esc(t(THEME_NAME[curTheme()]))}</span></button>`;
 
   // ---------- peças ----------
   const badge = (s) => `<span class="sb s-${s}"><i></i>${esc(sl(s))}</span>`;
@@ -1099,7 +1103,7 @@
     signOut: async () => { UI.menuOpen = false; if (LIVE) { if (stopListen) stopListen(); stopListen = null; await LIVE.signOut(); DB = emptyDB(); UI.extras = {}; } UI.user = null; saveUI(); render(); },
     switchUser: (el) => { UI.user = el.dataset.id; UI.menuOpen = false; saveUI(); clearSel(); toast(t('Now viewing as {n}', { n: me().name })); render(); },
     lang: () => { UI.lang = UI.lang === 'pt' ? 'en' : 'pt'; saveUI(); render(); },
-    theme: () => { const light = !isLight(); if (light) document.documentElement.dataset.theme = 'light'; else delete document.documentElement.dataset.theme; try { localStorage.setItem('tsh-theme', light ? 'light' : 'dark'); } catch (e) { /* sem armazenamento */ } render(); },
+    theme: () => { const n = nextTheme(); if (n === 'dark') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = n; try { localStorage.setItem('tsh-theme', n); } catch (e) { /* sem armazenamento */ } render(); },
     bell: () => { UI.bellOpen = !UI.bellOpen; UI.menuOpen = false; render(); },
     menu: () => { UI.menuOpen = !UI.menuOpen; UI.bellOpen = false; render(); },
     readAll: () => { DB.notifications.forEach((n) => { if (n.user === UI.user) n.read = true; }); commit(); remote(() => LIVE.readNotifications()); render(); },

@@ -165,4 +165,5 @@ window.PT = {
   '{n} new ad(s) arrived from Drive ({b})': '{n} anúncio(s) novo(s) chegaram do Drive ({b})',
   '{n} saved, then it stopped: {e}': '{n} salvos, depois parou: {e}',
   'Dark background': 'Fundo escuro', 'White background': 'Fundo branco',
+  'Sand': 'Areia', 'Blue': 'Azul', 'Dark': 'Escuro', 'Change theme': 'Trocar tema', 'Theme: {a} · next: {b}': 'Tema: {a} · próximo: {b}',
 };
