@@ -56,7 +56,7 @@
       sw: rnd(0.6, 1.6), ph: rnd(0, Math.PI * 2), life: burst ? 1 : 0,
     };
   }
-  function seed() { const n = Math.round(Math.min(60, Math.max(26, W / 22))); parts = []; for (let i = 0; i < n; i++) parts.push(make()); }
+  function seed() { const n = Math.round(Math.min(64, Math.max(24, (W * H) / 26000))); parts = []; for (let i = 0; i < n; i++) parts.push(make()); }
 
   function step(dt, t) {
     windT += dt; wind += ((Math.sin(windT * .35) * 22) - wind) * Math.min(1, dt * .8);
@@ -78,7 +78,7 @@
     for (const p of parts) {
       const fl = Math.cos(p.flip); const sy = Math.max(0.06, Math.abs(fl));
       ctx.save(); ctx.translate(p.x, p.y);
-      ctx.globalAlpha = Math.min(1, 0.35 + p.z * 0.6);
+      ctx.globalAlpha = Math.min(0.82, 0.22 + p.z * 0.6); // de fundo: nota mais transparente para não brigar com o texto
       if (p.isCoin) {
         const sz = 30 * p.z; ctx.scale(Math.max(0.08, Math.abs(Math.cos(p.flip * 1.3))), 1);
         ctx.drawImage(sp.coin, -sz / 2, -sz / 2, sz, sz);
@@ -110,18 +110,21 @@
   window.MoneyRain = {
     mount() {
       const cv = document.getElementById('money'); if (!cv) return;
-      if (!cv.dataset.bound) {
-        cv.dataset.bound = '1';
-        const stage = cv.parentElement;
-        stage.addEventListener('pointermove', (e) => { const r = cv.getBoundingClientRect(); mouse = { x: e.clientX - r.left, y: e.clientY - r.top }; });
-        stage.addEventListener('pointerleave', () => { mouse = null; });
-        stage.addEventListener('click', (e) => { if (e.target.closest('a,button')) return; const r = cv.getBoundingClientRect(); window.MoneyRain.burst(e.clientX - r.left, e.clientY - r.top, 26); });
+      if (!window.__moneyBound) {
+        // fundo da página inteira: o mouse sopra as notas e o clique em área vazia faz chover
+        window.__moneyBound = true;
+        window.addEventListener('pointermove', (e) => { if (document.getElementById('money')) mouse = { x: e.clientX, y: e.clientY }; }, { passive: true });
+        document.addEventListener('pointerleave', () => { mouse = null; });
+        document.addEventListener('click', (e) => {
+          if (!document.getElementById('money') || e.target.closest('a,button,input,select,textarea,label,.pcard,.pl,.top,.pop,.modal-root')) return;
+          window.MoneyRain.burst(e.clientX, e.clientY, 22);
+        });
       }
       if (!raf) { last = 0; raf = requestAnimationFrame(frame); }
     },
     burst(x, y, n) {
       if (reduce) return;
-      if (x == null) { x = W / 2; y = H * 0.55; }
+      if (x == null) { x = W / 2; y = H * 0.45; }
       for (let i = 0; i < (n || 30); i++) parts.push(make(x + rnd(-20, 20), y + rnd(-10, 10), true));
       if (!raf) raf = requestAnimationFrame(frame);
     },

@@ -70,11 +70,18 @@
           all(() => sb.from('drive_batches').select('*').order('first_seen_at', { ascending: false }).order('id')),
           sb.from('platform_integrations').select('*').then((r) => (r.error ? [] : r.data || [])),
         ]);
+        // lotes menores e poucos de cada vez: endereço curto e sem estourar o limite do servidor; tenta de novo se falhar
         const ids = batches.map((b) => b.id);
         const chunks = [];
-        for (let i = 0; i < ids.length; i += 100) chunks.push(ids.slice(i, i + 100));
-        for (let i = 0; i < chunks.length; i += 6) {
-          const part = await Promise.all(chunks.slice(i, i + 6).map((c) => all(() => sb.from('drive_files').select('id,batch_id,file_id,name,mime_type,size_bytes,drive_created_at,ad_id,removed_at').in('batch_id', c).order('name').order('id'))));
+        for (let i = 0; i < ids.length; i += 50) chunks.push(ids.slice(i, i + 50));
+        const readChunk = async (c) => {
+          for (let tries = 0; ; tries++) {
+            try { return await all(() => sb.from('drive_files').select('id,batch_id,file_id,name,mime_type,size_bytes,drive_created_at,ad_id,removed_at').in('batch_id', c).order('name').order('id')); }
+            catch (e) { if (tries >= 2) throw e; await new Promise((r) => setTimeout(r, 600 * (tries + 1))); }
+          }
+        };
+        for (let i = 0; i < chunks.length; i += 3) {
+          const part = await Promise.all(chunks.slice(i, i + 3).map(readChunk));
           part.forEach((p) => files.push(...p));
         }
       }

@@ -462,17 +462,11 @@
       ['#/performance', '03', t('Performance'), t('Where the money is going and what is coming back.'), `ROAS ${num(m.roas, 2)} · ${money(m.spend)}`],
     ];
     const running = c('testing') + c('scaling');
-    return `<section class="money-stage" aria-label="${esc(t('Live operation'))}">
-      <canvas id="money" aria-hidden="true"></canvas>
-      <div class="ms-glow" aria-hidden="true"></div>
-      <div class="ms-over">
-        <p class="ms-live"><i></i>${esc(t('Live now'))}</p>
-        <p class="ms-num"><b data-countup="${running}">${running}</b></p>
-        <p class="ms-label">${esc(t('ads live right now'))}</p>
-        <p class="ms-sub"><span class="s-testing"><i></i>${c('testing')} ${esc(t('testing'))}</span><span class="s-scaling"><i></i>${c('scaling')} ${esc(t('scaling'))}</span><span class="s-validated"><i></i>${c('validated')} ${esc(sl('validated').toLowerCase())}</span></p>
-        <button class="btn ms-btn" data-a="rain">${esc(t('Make it rain'))}</button>
-      </div>
-      <p class="ms-hint">${esc(t('move the mouse · click anywhere'))}</p>
+    return `<canvas id="money" class="money-bg" aria-hidden="true"></canvas>
+    <section class="ms-live-row" aria-label="${esc(t('Live operation'))}">
+      <p class="ms-live"><i></i>${esc(t('Live now'))}</p>
+      <p class="ms-num"><b data-countup="${running}">${running}</b><span class="ms-label">${esc(t('ads live right now'))}</span></p>
+      <div class="ms-sub"><span class="s-testing"><i></i>${c('testing')} ${esc(t('testing'))}</span><span class="s-scaling"><i></i>${c('scaling')} ${esc(t('scaling'))}</span><span class="s-validated"><i></i>${c('validated')} ${esc(sl('validated').toLowerCase())}</span><button class="btn ms-btn" data-a="rain">${esc(t('Make it rain'))}</button></div>
     </section>
     <section class="hero-p">
       <p class="eyebrow">${esc(t('Hello, {n}', { n: me().name.split(' ')[0] }))} · ${esc(new Date().toLocaleDateString(loc(), { weekday: 'long', day: 'numeric', month: 'long' }))}</p>
