@@ -461,7 +461,20 @@
       ['#/reports', '02', t('Reports'), t('Every ad, every status, every rejection reason. CSV and PDF.'), `${ads.length} ${t('ads')} · ${c('rejected') + c('sold_rej')} ${t('rejected')}`],
       ['#/performance', '03', t('Performance'), t('Where the money is going and what is coming back.'), `ROAS ${num(m.roas, 2)} · ${money(m.spend)}`],
     ];
-    return `<section class="hero-p">
+    const running = c('testing') + c('scaling');
+    return `<section class="money-stage" aria-label="${esc(t('Live operation'))}">
+      <canvas id="money" aria-hidden="true"></canvas>
+      <div class="ms-glow" aria-hidden="true"></div>
+      <div class="ms-over">
+        <p class="ms-live"><i></i>${esc(t('Live now'))}</p>
+        <p class="ms-num"><b data-countup="${running}">${running}</b></p>
+        <p class="ms-label">${esc(t('ads live right now'))}</p>
+        <p class="ms-sub"><span class="s-testing"><i></i>${c('testing')} ${esc(t('testing'))}</span><span class="s-scaling"><i></i>${c('scaling')} ${esc(t('scaling'))}</span><span class="s-validated"><i></i>${c('validated')} ${esc(sl('validated').toLowerCase())}</span></p>
+        <button class="btn ms-btn" data-a="rain">${esc(t('Make it rain'))}</button>
+      </div>
+      <p class="ms-hint">${esc(t('move the mouse · click anywhere'))}</p>
+    </section>
+    <section class="hero-p">
       <p class="eyebrow">${esc(t('Hello, {n}', { n: me().name.split(' ')[0] }))} · ${esc(new Date().toLocaleDateString(loc(), { weekday: 'long', day: 'numeric', month: 'long' }))}</p>
       <h1 class="panel-title"><span class="silver">${esc(t('Traffic'))}</span><br>${esc(t('Management'))}</h1>
       <div class="pulse">${PIPE.map((s) => `<a href="#/pipeline" class="pl s-${s}"><i></i><b data-count="${c(s)}">${c(s)}</b><span>${esc(sl(s))}</span></a>`).join('')}
@@ -1282,7 +1295,17 @@
     }
     app.innerHTML = body;
     document.title = title + ' · Traffic Hub';
+    if (r.name === 'panel' && window.MoneyRain) { window.MoneyRain.mount(); countUp(); }
     if (focus) { const el = document.getElementById(focus.id); if (el) { el.focus(); try { el.setSelectionRange(focus.s, focus.s); } catch (e) { /* não é texto */ } } }
+  }
+
+  // número do palco sobe do zero na primeira vez que aparece
+  let counted = false;
+  function countUp() {
+    const el = document.querySelector('[data-countup]'); if (!el || counted) return;
+    counted = true; const to = +el.dataset.countup; const t0 = performance.now();
+    const tick = (now) => { const k = Math.min(1, (now - t0) / 1400); const e = 1 - Math.pow(1 - k, 3); const cur = document.querySelector('[data-countup]'); if (!cur) return; cur.textContent = new Intl.NumberFormat(loc()).format(Math.round(to * e)); if (k < 1) requestAnimationFrame(tick); };
+    requestAnimationFrame(tick);
   }
 
   // ---------- eventos ----------
@@ -1343,6 +1366,7 @@
     driveTab: (el) => { UI.drive.tab = el.dataset.v; UI.drive.sel.clear(); render(); },
     selFolder: (el) => { DB.batches.filter((b) => b.source === el.dataset.id && b.status === UI.drive.tab && !b.removed).forEach((b) => UI.drive.sel.add(b.id)); render(); },
     adList: () => adListModal(),
+    rain: () => { if (window.MoneyRain) { window.MoneyRain.burst(null, null, 60); } },
     checkList: () => {
       const m = modalRoot.querySelector('textarea[name=list]'); const box = document.getElementById('list-res');
       const ms = matchAdList(m.value);
