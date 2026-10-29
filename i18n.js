@@ -166,4 +166,5 @@ window.PT = {
   '{n} saved, then it stopped: {e}': '{n} salvos, depois parou: {e}',
   'Dark background': 'Fundo escuro', 'White background': 'Fundo branco',
   'Sand': 'Areia', 'Blue': 'Azul', 'Dark': 'Escuro', 'Change theme': 'Trocar tema', 'Theme: {a} · next: {b}': 'Tema: {a} · próximo: {b}',
+  'Lavender': 'Lavanda',
 };

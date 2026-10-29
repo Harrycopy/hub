@@ -31,7 +31,7 @@
   const qp = new URLSearchParams(location.search);
   if (!LIVE && qp.get('as') && DB.users.some((u) => u.id === qp.get('as'))) UI.user = qp.get('as');
   if (qp.get('lang') === 'pt' || qp.get('lang') === 'en') UI.lang = qp.get('lang');
-  if (['sand', 'light', 'dark'].includes(qp.get('theme'))) { if (qp.get('theme') === 'dark') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = qp.get('theme'); }
+  if (['lilac', 'sand', 'light', 'dark'].includes(qp.get('theme'))) { if (qp.get('theme') === 'dark') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = qp.get('theme'); }
   const commit = () => { if (!LIVE) store.set(LS, DB); };
   const saveUI = () => store.set(LS_UI, { lang: UI.lang, user: LIVE ? null : UI.user, pipeView: UI.pipe.view });
 
@@ -300,9 +300,9 @@
     sun: I('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'),
     moon: I('<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z"/>'),
   };
-  // três temas: Areia (padrão), Azul e Escuro; o botão passa para o próximo
-  const THEMES = ['sand', 'light', 'dark'];
-  const THEME_NAME = { sand: 'Sand', light: 'Blue', dark: 'Dark' };
+  // temas: Lavanda (padrão), Areia, Azul e Escuro; o botão passa para o próximo
+  const THEMES = ['lilac', 'sand', 'light', 'dark'];
+  const THEME_NAME = { lilac: 'Lavender', sand: 'Sand', light: 'Blue', dark: 'Dark' };
   const curTheme = () => document.documentElement.dataset.theme || 'dark';
   const nextTheme = () => THEMES[(THEMES.indexOf(curTheme()) + 1) % THEMES.length];
   const themeBtn = (cls) => `<button type="button" class="tool theme-b ${cls || ''}" data-a="theme" title="${esc(t('Theme: {a} · next: {b}', { a: t(THEME_NAME[curTheme()]), b: t(THEME_NAME[nextTheme()]) }))}" aria-label="${esc(t('Change theme'))}">${curTheme() === 'dark' ? IC.moon : IC.sun}<span>${esc(t(THEME_NAME[curTheme()]))}</span></button>`;
