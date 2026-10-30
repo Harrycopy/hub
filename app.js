@@ -217,7 +217,7 @@
       const o = offer(a.offer); if (!canWrite(o)) return;
       prev.push([id, a.status, a.reason, a.changed]);
       log(o.id, 'ad_status', { ad: a.name, from: a.status, to: st });
-      if (REJ.includes(st)) { if (reason !== a.reason) log(o.id, 'reason', { ad: a.name, reason }); a.reason = reason; }
+      if (REJ.includes(st) && reason != null) { if (reason !== a.reason) log(o.id, 'reason', { ad: a.name, reason }); a.reason = reason; }
       a.status = st; a.changed = now();
       notify(o.assignee, o.id, 'status', { ad: a.name, to: st });
     });
@@ -237,7 +237,9 @@
   function changeStatus(ids, st) {
     ids = ids.filter((id) => { const a = ad(id); return a && a.status !== st && canWrite(offer(a.offer)); });
     if (!ids.length) return;
-    if (REJ.includes(st)) return reasonModal(ids, st);
+    // rejeição: quem já tem motivo mantém o motivo; o modal só abre para quem está sem
+    const keep = REJ.includes(st) ? ids.filter((id) => (ad(id).reason || '').trim()) : [];
+    if (REJ.includes(st) && keep.length < ids.length) return reasonModal(ids.filter((id) => !keep.includes(id)), st, undefined, keep);
     const prev = setStatus(ids, st);
     const out = !PIPE.includes(st) && route().name === 'pipeline';
     toast(t(ids.length > 1 ? '{n} ads moved to {s}' : '{n} ad moved to {s}', { n: ids.length, s: sl(st) }) + (out ? ' · ' + t('find it in Reports') : ''), { undo: () => undoStatus(prev) });
@@ -860,16 +862,17 @@
   const activeOpts = (kind) => catalogOf(kind).map((c) => [c.id, c.label]);
   const mgrOpts = () => DB.users.filter((u) => u.active).map((u) => [u.id, u.name + ' · ' + roleLabel(u.role)]);
 
-  function reasonModal(ids, st, current) {
+  function reasonModal(ids, st, current, keep) {
     openModal(t('Rejection reason'), `<p class="muted">${esc(t('{n} ad(s) → {s}. The reason is required and goes to the history.', { n: ids.length, s: sl(st) }))}</p>${field(t('Reason'), `<textarea name="reason" required>${esc(current || '')}</textarea>`)}`, (fd) => {
       const reason = (fd.get('reason') || '').trim();
       if (!reason) return mErr(t('Write the reason.'));
       if (current != null) {
         const a = ad(ids[0]); log(a.offer, 'reason', { ad: a.name, reason }); a.reason = reason; commit(); closeModal(); remote(() => LIVE.setReason(a.id, reason)); toast(t('Reason saved')); return render();
       }
-      const prev = setStatus(ids, st, reason);
+      const prev = (keep && keep.length ? setStatus(keep, st) : []).concat(setStatus(ids, st, reason));
+      const n = prev.length;
       closeModal(); clearSel();
-      toast(t(ids.length > 1 ? '{n} ads moved to {s}' : '{n} ad moved to {s}', { n: ids.length, s: sl(st) }) + (route().name === 'pipeline' ? ' · ' + t('find it in Reports') : ''), { undo: () => undoStatus(prev) });
+      toast(t(n > 1 ? '{n} ads moved to {s}' : '{n} ad moved to {s}', { n, s: sl(st) }) + (route().name === 'pipeline' ? ' · ' + t('find it in Reports') : ''), { undo: () => undoStatus(prev) });
       render();
     }, { ok: t('Confirm') });
   }
