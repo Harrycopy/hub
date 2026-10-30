@@ -860,6 +860,16 @@
   const mErr = (msg) => { const e = modalRoot.querySelector('.merr'); if (e) e.textContent = msg; };
   const checks = (name, opts, vals) => `<div class="checks">${opts.map(([v, l]) => `<label><input type="checkbox" name="${name}" value="${esc(v)}"${(vals || []).includes(v) ? ' checked' : ''}><span>${esc(l)}</span></label>`).join('')}</div>`;
   const field = (label, inner, cls) => `<label class="mf ${cls || ''}"><span>${esc(label)}</span>${inner}</label>`;
+  // lista longa (VSLs, gestores): um botão que abre busca + rolagem, no lugar de dezenas de botões soltos
+  const pickSum = (labels, ph) => (labels.length ? (labels.length > 4 ? labels.slice(0, 4).join(', ') + ' +' + (labels.length - 4) : labels.join(', ')) : ph);
+  const pick = (name, opts, vals, ph) => {
+    vals = vals || [];
+    return `<details class="ms pick" data-ph="${esc(ph)}"><summary>${esc(pickSum(opts.filter(([v]) => vals.includes(v)).map(([, l]) => l), ph))}</summary>
+      <div class="pick-pop"><span class="search">${IC.search}<input type="search" class="pick-q" placeholder="${esc(t('Search'))}" aria-label="${esc(t('Search'))}" autocomplete="off"></span>
+      <div class="pick-list">${opts.map(([v, l]) => `<label><input type="checkbox" name="${name}" value="${esc(v)}"${vals.includes(v) ? ' checked' : ''}><span>${esc(l)}</span></label>`).join('')}<p class="pick-none" hidden>${esc(t('Nothing found'))}</p></div></div></details>`;
+  };
+  // div em vez de label: um label em volta do botão abriria/marcaria o primeiro item ao clicar
+  const fieldBox = (label, inner, cls) => `<div class="mf ${cls || ''}"><span>${esc(label)}</span>${inner}</div>`;
   const options = (list, val, empty) => (empty ? `<option value="">${esc(empty)}</option>` : '') + list.map(([v, l]) => `<option value="${esc(v)}"${v === val ? ' selected' : ''}>${esc(l)}</option>`).join('');
   const activeOpts = (kind) => catalogOf(kind).map((c) => [c.id, c.label]);
   const mgrOpts = () => DB.users.filter((u) => u.active).map((u) => [u.id, u.name + ' · ' + roleLabel(u.role)]);
@@ -884,7 +894,7 @@
       ${field(t('Name'), `<input name="name" required value="${esc(v.name)}">`, 'full')}
       ${field(t('Drive folder link'), `<input name="drive" type="url" required placeholder="https://drive.google.com/…" value="${esc(v.drive)}">`, 'full')}
       ${field(t('Products'), checks('products', activeOpts('product'), v.products), 'full')}
-      ${field('VSLs', checks('vsls', activeOpts('vsl'), v.vsls), 'full')}
+      ${fieldBox('VSLs', pick('vsls', activeOpts('vsl'), v.vsls, t('Choose VSLs')), 'full')}
       ${field(t('Mechanisms'), checks('mechanisms', activeOpts('mechanism'), v.mechanisms), 'full')}
       ${field(t('Channel'), `<select name="channel">${options(activeOpts('channel'), v.channel)}</select>`)}
       ${field(t('Niche'), `<select name="niche" required>${options(DB.niches.map((n) => [n.id, nicheLabel(n.id)]), v.niche, t('Choose'))}</select>`)}
@@ -927,7 +937,7 @@
   function relaunchModal(ids) {
     const ads = ids.map(ad).filter(Boolean);
     openModal(t('Relaunch {n} ad(s)', { n: ads.length }), `<p class="muted">${esc(t('Creates a new ad in Test for each target VSL. The original and its tests stay untouched.'))}</p>
-      ${field(t('Target VSLs'), checks('vsls', activeOpts('vsl'), []), 'full')}
+      ${fieldBox(t('Target VSLs'), pick('vsls', activeOpts('vsl'), [], t('Choose VSLs')), 'full')}
       ${field(t('Product (optional)'), `<select name="product">${options(activeOpts('product'), '', t('Keep the original'))}</select>`)}
       ${field(t('Managers (optional)'), checks('mgrs', DB.users.filter((u) => u.active && u.role === 'gestor').map((u) => [u.id, u.name]), []), 'full')}`, (fd) => {
       const vs = fd.getAll('vsls'); const prod = fd.get('product'); const mgrs = fd.getAll('mgrs');
@@ -1235,7 +1245,7 @@
         ${field(t('Name'), `<input name="name" required value="${esc(t('Ad list') + ' — ' + today)}">`, 'full')}
         ${field(t('Drive folder link'), `<input name="drive" type="url" required placeholder="https://drive.google.com/…">`, 'full')}
         ${field(t('Products'), checks('products', activeOpts('product'), []), 'full')}
-        ${field('VSLs', checks('vsls', activeOpts('vsl'), []), 'full')}
+        ${fieldBox('VSLs', pick('vsls', activeOpts('vsl'), [], t('Choose VSLs')), 'full')}
         ${field(t('Mechanisms'), checks('mechanisms', activeOpts('mechanism'), []), 'full')}
         ${field(t('Channel'), `<select name="channel">${options(activeOpts('channel'), '')}</select>`)}
         ${field(t('Niche'), `<select name="niche" required>${options(DB.niches.map((n) => [n.id, nicheLabel(n.id)]), '', t('Choose'))}</select>`)}
@@ -1418,36 +1428,47 @@
     batchRestoreMany: () => { const ids = [...UI.drive.sel]; ids.forEach((id) => { const b = DB.batches.find((x) => x.id === id); b.status = b.offer ? 'linked' : 'new'; b.reason = null; }); commit(); clearSel(); remote(() => LIVE.restoreBatches(ids)); toast(t('{n} batches restored', { n: ids.length })); render(); },
     batchCreateMany: () => {
       const bs = [...UI.drive.sel].map((id) => DB.batches.find((x) => x.id === id)).filter((b) => b.status === 'new');
-      openModal(t('Create {n} demands', { n: bs.length }), `<p class="muted">${esc(t('One demand per batch, named "Product — batch". Shared fields below.'))}</p>
-        ${field('VSLs', checks('vsls', activeOpts('vsl'), []), 'full')}${field(t('Mechanisms'), checks('mechanisms', activeOpts('mechanism'), []), 'full')}
-        ${field(t('Manager'), `<select name="assignee" required>${options(mgrOpts(), '', t('Choose'))}</select>`)}${field(t('Deadline'), '<input type="date" name="deadline">')}`, (fd) => {
-        const vs = fd.getAll('vsls'), ms = fd.getAll('mechanisms'), as = fd.get('assignee');
-        if (!vs.length || !ms.length || !as) return mErr(t('Pick VSL, mechanism and manager.'));
+      openModal(t('Create {n} demands', { n: bs.length }), `<p class="muted">${esc(t('One demand per batch and per manager, named "Product — batch". Shared fields below.'))}</p>
+        ${fieldBox('VSLs', pick('vsls', activeOpts('vsl'), [], t('Choose VSLs')), 'full')}${field(t('Mechanisms'), checks('mechanisms', activeOpts('mechanism'), []), 'full')}
+        ${fieldBox(t('Managers'), pick('assignee', mgrOpts(), [], t('Choose managers')))}${field(t('Deadline'), '<input type="date" name="deadline">')}`, (fd) => {
+        const vs = fd.getAll('vsls'), ms = fd.getAll('mechanisms'), as = fd.getAll('assignee');
+        if (!vs.length || !ms.length || !as.length) return mErr(t('Pick VSL, mechanism and manager.'));
+        // o banco liga cada lote a uma demanda só: o 1º gestor fica com o lote; os outros ganham demanda própria com os mesmos anúncios (nome e link do vídeo)
+        const adFiles = (b) => DB.files.filter((f) => f.batch === b.id && !f.removed && (!f.mime || /^(video|image)\//.test(f.mime)));
+        const adName = (name) => name.replace(/\.[A-Za-z0-9]{2,5}$/, '').trim();
         if (LIVE) {
           const btn = modalRoot.querySelector('footer .btn.primary'); btn.disabled = true;
           return (async () => {
             let done = 0;
             try {
-              // uma demanda por lote; se cair no meio, o que já foi criado fica e o resto dá para refazer
+              // se cair no meio, o que já foi criado fica e o resto dá para refazer
               for (const b of bs) {
-                const d = Object.assign(batchDefaults(b), { vsls: vs, mechanisms: ms, assignee: as, deadline: fd.get('deadline') || null, description: '', notes: '' });
-                if (!d.products.length || !d.niche) throw new Error(t('Folder "{f}" has no default product or niche. Create this one alone.', { f: b.name }));
-                const saved = await LIVE.saveOffer(null, d);
-                await LIVE.linkBatch(b.id, saved.id); done++;
+                const base = Object.assign(batchDefaults(b), { vsls: vs, mechanisms: ms, deadline: fd.get('deadline') || null, description: '', notes: '' });
+                if (!base.products.length || !base.niche) throw new Error(t('Folder "{f}" has no default product or niche. Create this one alone.', { f: b.name }));
+                for (const [i, m] of as.entries()) {
+                  const saved = await LIVE.saveOffer(null, Object.assign({}, base, { assignee: m }));
+                  if (i === 0) await LIVE.linkBatch(b.id, saved.id);
+                  else await LIVE.insertAds(saved.id, adFiles(b).map((f) => ({ name: adName(f.name), link: 'https://drive.google.com/file/d/' + f.fileId + '/view' })));
+                  done++;
+                }
               }
               closeModal(); clearSel(); await reload(); toast(t('{n} demands created', { n: done }));
             } catch (e) { btn.disabled = false; await reload(); mErr(t('{n} saved, then it stopped: {e}', { n: done, e: errText(e) })); }
           })();
         }
-        let total = 0;
+        let total = 0, made = 0;
         bs.forEach((b) => {
-          const d = batchDefaults(b);
-          const n = String(Math.max(0, ...DB.offers.map((x) => +x.number)) + 1).padStart(4, '0');
-          const o = Object.assign({ id: uid('o'), number: n, created: now(), archived: null, source: null, description: '', notes: '', deadline: fd.get('deadline') ? fd.get('deadline') + 'T23:59:00' : null }, d, { vsls: vs, mechanisms: ms, assignee: as });
-          DB.offers.push(o); log(o.id, 'offer_created', { name: o.name }); log(o.id, 'assigned', { to: as }); notify(as, o.id, 'assigned');
-          total += linkBatch(b, o);
+          const d = batchDefaults(b); const files = adFiles(b);
+          as.forEach((m, i) => {
+            const n = String(Math.max(0, ...DB.offers.map((x) => +x.number)) + 1).padStart(4, '0');
+            const o = Object.assign({ id: uid('o'), number: n, created: now(), archived: null, source: null, description: '', notes: '', deadline: fd.get('deadline') ? fd.get('deadline') + 'T23:59:00' : null }, d, { vsls: vs, mechanisms: ms, assignee: m });
+            DB.offers.push(o); log(o.id, 'offer_created', { name: o.name }); log(o.id, 'assigned', { to: m }); notify(m, o.id, 'assigned'); made++;
+            if (i === 0) { total += linkBatch(b, o); return; }
+            files.forEach((f) => DB.ads.push({ id: uid('a'), offer: o.id, name: adName(f.name), channel: o.channel, link: 'https://drive.google.com/file/d/' + f.id + '/view', status: 'test', changed: now(), reason: '', created: now(), trashed: null, trashPrev: null, origin: null, targetVsl: null, targetProducts: null }));
+            total += files.length;
+          });
         });
-        commit(); closeModal(); clearSel(); toast(t('{n} demands created · {a} ads in Test', { n: bs.length, a: total })); render();
+        commit(); closeModal(); clearSel(); toast(t('{n} demands created · {a} ads in Test', { n: made, a: total })); render();
       }, { wide: true, ok: t('Create demands') });
     },
     hubAdmin: () => window.open(window.HUB_URL + '/admin', '_blank', 'noopener'),
@@ -1492,6 +1513,8 @@
   });
   let lastSel = null;
   document.addEventListener('change', (e) => {
+    const box = e.target.closest && e.target.closest('details.pick');
+    if (box) { box.querySelector('summary').textContent = pickSum([...box.querySelectorAll('.pick-list input:checked')].map((x) => x.nextElementSibling.textContent), box.dataset.ph); return; }
     const el = e.target; const k = el.dataset.ch; if (!k) return;
     if (k === 'status') return changeStatus([el.dataset.id], el.value);
     if (k === 'filter') { const f = scopeF(el.dataset.scope); f[el.dataset.key] = el.type === 'checkbox' ? el.checked : el.value; UI.openMs = null; return render(); }
@@ -1511,12 +1534,22 @@
     if (k === 'role' && LIVE) { render(); return A.hubAdmin(); }
     if (k === 'role') { const u = user(el.dataset.id); u.role = el.value; commit(); toast(t('{n} is now {r}', { n: u.name, r: roleLabel(u.role) })); return render(); }
   });
-  document.addEventListener('keydown', (e) => { window.__shift = e.shiftKey; });
+  document.addEventListener('keydown', (e) => {
+    window.__shift = e.shiftKey;
+    // Enter na busca da lista não envia o formulário
+    if (e.key === 'Enter' && e.target.classList && e.target.classList.contains('pick-q')) e.preventDefault();
+  });
   document.addEventListener('keyup', (e) => { window.__shift = e.shiftKey; });
   document.addEventListener('mousedown', (e) => { window.__shift = e.shiftKey; });
   let qTimer;
   document.addEventListener('input', (e) => {
-    const el = e.target; if (el.dataset.in !== 'q') return;
+    const el = e.target;
+    if (el.classList.contains('pick-q')) {
+      const q = el.value.toLowerCase().replace(/\s+/g, ''); const list = el.closest('.pick-pop').querySelector('.pick-list'); let n = 0;
+      list.querySelectorAll('label').forEach((l) => { const hit = !q || l.textContent.toLowerCase().replace(/\s+/g, '').includes(q); l.hidden = !hit; if (hit) n++; });
+      list.querySelector('.pick-none').hidden = n > 0; return;
+    }
+    if (el.dataset.in !== 'q') return;
     scopeF(el.dataset.scope).q = el.value;
     clearTimeout(qTimer); qTimer = setTimeout(render, 140);
   });
