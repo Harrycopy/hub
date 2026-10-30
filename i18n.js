@@ -120,6 +120,8 @@ window.PT = {
   'Access not granted': 'Acesso não liberado',
   'Access restricted to invited users. New users are invited in the Hub.': 'Acesso só para convidados. Usuário novo é convidado pelo Hub.',
   'Ads per offer in the Hub': 'Ads por oferta no Hub',
+  'The count could not be read from the database.': 'Não deu para ler a contagem no banco.', 'Drive count in progress': 'Contagem do Drive em andamento',
+  'Updated {d}': 'Atualizado {d}', 'ClickUp and COPY ADS read by the Hub every 10 min': 'ClickUp e COPY ADS lidos pelo Hub a cada 10 min', 'counting…': 'contando…',
   'Ask the workspace administrator to grant access.': 'Peça ao administrador para liberar seu acesso.',
   'Batch linked to #{n}': 'Lote vinculado à #{n}',
   'Could not load: {e}': 'Não carregou: {e}',

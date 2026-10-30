@@ -32,8 +32,70 @@
   }
   const must = (r) => { if (r.error) throw r.error; return r.data; };
 
+  // ---- Ads por oferta: a mesma conta do Hub (ads-by-offer.ts), em cima da foto que o robô do Hub salva a cada 10 min ----
+  const norm = (v) => String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
+  const idKey = (v) => norm(v).replace(/\s+/g, '');
+  const offerKey = (product, vsl) => idKey(product) + '/' + idKey(vsl);
+  function sourcePathKey(path) { const p = String(path || '').split('/').map((x) => x.trim()).filter(Boolean); return p.length >= 3 ? offerKey(p[p.length - 3], p[p.length - 2]) : null; }
+  function taskIdentity(name) {
+    const parts = [...String(name).matchAll(/\[([^\]]+)\]/g)].map((m) => (m[1] || '').trim());
+    const vsl = parts.find((x) => /^VSL\s*\d+$/i.test(x));
+    return parts[0] && vsl ? idKey(parts[0]) + '/' + idKey(vsl) : null;
+  }
+  const adNameKey = (name) => String(name).replace(/\.[A-Za-z0-9]{2,5}$/, '').replace(/\s+/g, '').toLowerCase();
+  function copyAdKeys(names) {
+    const keys = new Set();
+    for (const name of names) {
+      const key = adNameKey(name); const range = key.match(/^([a-z]+ad)(\d+)-(\d+)$/i);
+      if (range) { const from = Number(range[2]), to = Number(range[3]); if (to < from || to - from > 1000) continue; for (let n = from; n <= to; n++) keys.add(range[1] + n); }
+      else if (/^[a-z]+ad\d+(?:h\d+)?$/i.test(key)) keys.add(key);
+    }
+    return [...keys];
+  }
+  function adHookKey(name) { const key = adNameKey(name); const m = key.match(/^([a-z]+ad)0*(\d+)(?:h0*(\d+))?/); return m ? m[1] + m[2] + (m[3] ? 'h' + m[3] : '') : key; }
+  function splitOfferAds(editedNames, copyKeys) {
+    const edited = new Set(editedNames.map(adHookKey)); const ed = [...edited];
+    const pending = new Set(copyKeys.filter((k) => !edited.has(k) && !(!/h\d+$/.test(k) && ed.some((v) => v.startsWith(k + 'h')))));
+    return { editing: edited.size, copy: pending.size };
+  }
+  const STAGE_IN = { copywriter: 'copy', edicao: 'editing', dev: 'dev', trafego: 'traffic' };
+  const offerStage = (status) => { const s = norm(status); return /^aprovad[ao]s?$/.test(s) ? 'approved' : STAGE_IN[s] || null; };
+  const STAGE_ORDER = ['copy', 'editing', 'dev', 'traffic', 'approved'];
+  const collator = new Intl.Collator('pt-BR', { numeric: true, sensitivity: 'base' });
+  function offerAdsRows(snap, sources, batches, files) {
+    if (!snap || !snap.clickup) return null;
+    const keyBySource = new Map(sources.filter((s) => s.active).map((s) => [s.id, sourcePathKey(s.drive_path)]));
+    const keyByBatch = new Map(batches.filter((b) => !b.removed_at).map((b) => [b.id, keyBySource.get(b.source_id) || null]));
+    const edited = new Map();
+    for (const f of files) {
+      if (f.removed_at || !String(f.mime_type || '').startsWith('video/')) continue;
+      const key = keyByBatch.get(f.batch_id); if (!key) continue;
+      if (!edited.has(key)) edited.set(key, []); edited.get(key).push(f.name);
+    }
+    const copy = snap.copy, copyNames = copy ? new Map() : null;
+    if (copy) {
+      const keyByFolder = new Map((copy.folders || []).map((f) => [f.id, f.key]));
+      for (const d of copy.docs || []) {
+        const key = keyByFolder.get(d.parent); if (!key) continue;
+        const keys = copy.hooksReady && d.hooks ? d.hooks : copyAdKeys([d.name]);
+        if (!copyNames.has(key)) copyNames.set(key, []); copyNames.get(key).push(...keys);
+      }
+    }
+    const vsls = (copy && copy.vsls) || {};
+    const rows = (snap.clickup.tasks || []).flatMap((t) => {
+      const stage = offerStage(t.status); if (t.parent || !stage) return [];
+      const key = taskIdentity(t.name);
+      const folder = key && vsls[key] ? 'https://drive.google.com/drive/folders/' + vsls[key] : null;
+      const split = !copyNames ? { editing: null, copy: null } : key ? splitOfferAds(edited.get(key) || [], copyNames.get(key) || []) : { editing: 0, copy: 0 };
+      return [{ id: t.id, name: t.name, stage, mechName: t.mechanism || '', mechanism: null, editing: split.editing, copy: split.copy, folder }];
+    });
+    rows.sort((a, b) => STAGE_ORDER.indexOf(a.stage) - STAGE_ORDER.indexOf(b.stage) || collator.compare(a.name, b.name));
+    return { rows, updatedAt: copy ? copy.updatedAt || null : null, counting: !copy };
+  }
+
   const L = {
     sb,
+    offerAdsRows,
     session: null,
     me: null, // { id, role, active, name, email }
     async getSession() { const r = await sb.auth.getSession(); L.session = r.data.session; return L.session; },
@@ -63,12 +125,14 @@
         all(() => sb.from('offer_mechanisms').select('*').order('offer_id').order('mechanism_id')),
         sb.from('notifications').select('*').eq('user_id', L.me.id).order('created_at', { ascending: false }).limit(50).then(must),
       ]);
-      let sources = [], batches = [], files = [], integrations = [];
+      let sources = [], batches = [], files = [], integrations = [], snap = null;
       if (admin) {
-        [sources, batches, integrations] = await Promise.all([
+        [sources, batches, integrations, snap] = await Promise.all([
           all(() => sb.from('drive_sources').select('*').order('name').order('id')),
           all(() => sb.from('drive_batches').select('*').order('first_seen_at', { ascending: false }).order('id')),
           sb.from('platform_integrations').select('*').then((r) => (r.error ? [] : r.data || [])),
+          // foto do ClickUp e dos docs COPY ADS; sem a função no banco, a página avisa em vez de quebrar
+          sb.rpc('offer_ads_snapshot').then((r) => (r.error ? null : r.data || null)),
         ]);
         // lotes menores e poucos de cada vez: endereço curto e sem estourar o limite do servidor; tenta de novo se falhar
         const ids = batches.map((b) => b.id);
@@ -89,6 +153,7 @@
       const gv = group(ov, 'offer_id', 'vsl_id'), gp = group(op, 'offer_id', 'product_id'), gm = group(om, 'offer_id', 'mechanism_id');
       const firstFirst = (main, list) => { const l = (list || []).slice(); if (main && !l.includes(main)) l.unshift(main); else if (main) { l.splice(l.indexOf(main), 1); l.unshift(main); } return l; };
       const roleOf = new Map(roles.map((r) => [r.user_id, r.role]));
+      const apo = admin ? offerAdsRows(snap, sources, batches, files) : null;
       return {
         v: 'live',
         users: profiles.map((p) => ({ id: p.id, name: p.full_name || p.email, email: p.email, role: roleOf.get(p.id) || (p.id === L.me.id ? L.me.role : (admin ? null : 'gestor')), active: p.active, last: null })),
@@ -113,7 +178,8 @@
         sources: sources.map((s) => ({ id: s.id, name: s.name, path: s.drive_path || '', folder: s.folder_id, product: s.product_id, niche: s.niche_id, channel: s.channel_id, active: s.active, discovered: s.discovered, since: s.track_since, lastScan: s.last_scan_at, error: visibleDriveError(s.last_error) })),
         batches: batches.map((b) => ({ id: b.id, source: b.source_id, folder: b.folder_id, name: b.name, status: BATCH_IN[b.status] || b.status, reason: REASON_IN[b.ignored_reason] || null, offer: b.offer_id, removed: b.removed_at, arrived: b.first_seen_at })),
         files: files.map((f) => ({ id: f.id, batch: f.batch_id, fileId: f.file_id, name: f.name, mime: f.mime_type || '', size: f.size_bytes || 0, at: f.drive_created_at, ad: f.ad_id, removed: f.removed_at })),
-        tasks: [],
+        tasks: apo ? apo.rows : [],
+        adsState: apo ? { updatedAt: apo.updatedAt, counting: apo.counting } : null,
         integrations: integrations.map((x) => ({ platform: x.platform, status: x.status, last: x.last_sync_at })),
         scans: { auto: sources.reduce((m, s) => (s.last_scan_at && (!m || s.last_scan_at > m) ? s.last_scan_at : m), null), manual: null },
       };

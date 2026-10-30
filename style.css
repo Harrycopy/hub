@@ -256,6 +256,7 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .tag { display: inline-block; padding: 2px 7px; border-radius: 5px; border: 1px solid var(--line2); font: 500 10.5px/1.4 var(--fm); color: var(--mute); text-transform: uppercase; letter-spacing: .05em; vertical-align: middle; }
 .tag.amber { color: var(--yellow-ink); border-color: color-mix(in srgb, var(--yellow) 50%, transparent); }
 .tag.green { color: var(--ok); border-color: rgba(132, 196, 76, .35); }
+.tag.red { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
 
 /* status */
 .s-test { --c: var(--st-test); } .s-testing { --c: var(--st-testing); } .s-scaling { --c: var(--st-scaling); } .s-validated { --c: var(--st-validated); }

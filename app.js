@@ -802,17 +802,23 @@
   // ---------- Ads per offer ----------
   function viewAdsPerOffer() {
     if (!isAdmin()) return denied();
-    if (LIVE) return `<div class="ph"><div><p class="eyebrow">${esc(t('Admin / Ads per offer'))}</p><h1 class="page-title">${esc(t('Ads per offer'))}</h1>
-      <p class="muted">${esc(t('This count reads ClickUp and the COPY ADS docs on the server, so for now it stays in the old Hub.'))}</p></div></div>
-      <div class="empty"><b>${esc(t('Open it in the Hub'))}</b><a class="btn primary" href="${window.HUB_URL}/ads-por-oferta" target="_blank" rel="noopener">${IC.ext}${esc(t('Ads per offer in the Hub'))}</a></div>`;
+    const head = `<div class="ph"><div><p class="eyebrow">${esc(t('Admin / Ads per offer'))}</p><h1 class="page-title">${esc(t('Ads per offer'))}</h1>
+      <p class="muted">${esc(t('Each VSL needs {g} ads. Edited videos come from Drive, hooks waiting for video come from the COPY ADS docs.', { g: ADS_GOAL }))}</p></div></div>`;
+    if (LIVE && !DB.adsState) return head + `<div class="empty"><b>${esc(t('The count could not be read from the database.'))}</b><a class="btn ghost" href="${window.HUB_URL}/ads-por-oferta" target="_blank" rel="noopener">${IC.ext}${esc(t('Ads per offer in the Hub'))}</a></div>`;
     const ST = [['copy', 'Copywriter'], ['editing', t('Editing')], ['dev', 'Dev'], ['traffic', t('Traffic')], ['approved', t('Approved')]];
-    const total = DB.tasks.reduce((s, x) => s + x.editing, 0);
-    return `<div class="ph"><div><p class="eyebrow">${esc(t('Admin / Ads per offer'))}</p><h1 class="page-title">${esc(t('Ads per offer'))}</h1>
-      <p class="muted">${esc(t('Each VSL needs {g} ads. Edited videos come from Drive, hooks waiting for video come from the COPY ADS docs.', { g: ADS_GOAL }))}</p></div></div>
-      <div class="kgrid"><div class="kpi hl"><span>${esc(t('Offers'))}</span><b>${DB.tasks.length}</b></div><div class="kpi"><span>${esc(t('Edited ads'))}</span><b>${total}</b></div><div class="kpi"><span>${esc(t('Hooks waiting for video'))}</span><b>${DB.tasks.reduce((s, x) => s + x.copy, 0)}</b></div><div class="kpi"><span>${esc(t('At goal'))}</span><b>${DB.tasks.filter((x) => x.editing >= ADS_GOAL).length}</b></div></div>
+    // mesma régua do Hub: tem vídeo editado = tem ads; só hook no doc = para editar; nada = fazer ads
+    const counted = (x) => x.editing !== null && x.editing !== undefined;
+    const label = (x) => (x.editing >= 1 ? 'has' : x.copy >= 1 ? 'edit' : 'make');
+    const rows = DB.tasks.filter(counted); const n = (k) => rows.filter((x) => label(x) === k).length;
+    const st = DB.adsState;
+    const when = st && st.counting ? t('Drive count in progress') : st && st.updatedAt ? t('Updated {d}', { d: ago(st.updatedAt) }) : '';
+    return head + `<div class="kgrid"><div class="kpi hl"><span>${esc(t('Offers'))}</span><b>${DB.tasks.length}</b></div><div class="kpi"><span>${esc(t('Has ads'))}</span><b>${n('has')}</b></div><div class="kpi"><span>${esc(t('To edit'))}</span><b>${n('edit')}</b></div><div class="kpi"><span>${esc(t('Make ads'))}</span><b>${n('make')}</b></div></div>
+      ${when ? `<div class="scanline"><span>${IC.clock}${esc(when)}</span><span class="muted">${esc(t('ClickUp and COPY ADS read by the Hub every 10 min'))}</span></div>` : ''}
       ${ST.map(([k, l]) => { const list = DB.tasks.filter((x) => x.stage === k); return list.length ? `<section class="stage"><h3>${esc(l)} <b class="count">${list.length}</b></h3>${list.map((x) => {
-        const p = Math.min(1, x.editing / ADS_GOAL); const lab = x.editing >= ADS_GOAL ? t('Has ads') : x.editing + x.copy >= ADS_GOAL ? t('To edit') : t('Make ads');
-        return `<div class="apo"><div><b>${esc(x.name)}</b><small>${esc(catLabel(x.mechanism))} · ${esc(t('Editing'))}: ${x.editing} · Copy: ${x.copy}</small></div><div class="apo-p"><span class="prog"><i style="width:${p * 100}%"></i><i class="cp" style="width:${Math.min(1 - p, x.copy / ADS_GOAL) * 100}%"></i></span><span class="mono">${x.editing}/${ADS_GOAL}</span></div><span class="tag ${x.editing >= ADS_GOAL ? 'green' : x.editing + x.copy >= ADS_GOAL ? 'amber' : ''}">${esc(lab)}</span><a class="btn ghost xs" href="${esc(x.folder)}" target="_blank" rel="noopener">Drive${IC.ext}</a></div>`;
+        const mech = x.mechName !== undefined ? x.mechName || '—' : catLabel(x.mechanism);
+        if (!counted(x)) return `<div class="apo"><div><b>${esc(x.name)}</b><small>${esc(t('Mechanism'))}: ${esc(mech)}</small></div><div class="apo-p"><span class="muted">${esc(t('counting…'))}</span></div><span></span>${x.folder ? `<a class="btn ghost xs" href="${esc(x.folder)}" target="_blank" rel="noopener">Drive${IC.ext}</a>` : '<span></span>'}</div>`;
+        const tot = x.editing + x.copy; const p = Math.min(1, x.editing / ADS_GOAL); const lb = label(x);
+        return `<div class="apo"><div><b>${esc(x.name)}</b><small>${esc(t('Mechanism'))}: ${esc(mech)} · ${esc(t('Editing'))}: ${x.editing} · Copy: ${x.copy}</small></div><div class="apo-p"><span class="prog"><i style="width:${p * 100}%"></i><i class="cp" style="width:${Math.min(1 - p, x.copy / ADS_GOAL) * 100}%"></i></span><span class="mono">${tot}/${ADS_GOAL}</span></div><span class="tag ${lb === 'has' ? 'green' : lb === 'edit' ? 'amber' : 'red'}">${esc(lb === 'has' ? t('Has ads') : lb === 'edit' ? t('To edit') : t('Make ads'))}</span>${x.folder ? `<a class="btn ghost xs" href="${esc(x.folder)}" target="_blank" rel="noopener">Drive${IC.ext}</a>` : '<span></span>'}</div>`;
       }).join('')}</section>` : ''; }).join('')}`;
   }
 
