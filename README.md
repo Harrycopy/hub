@@ -6,7 +6,16 @@ Site: https://harrycopy.github.io/hub/
 
 **Ligado no banco real do Hub** (o mesmo Supabase do Hub do Lovable): mesmo login, mesmas permissões, os mesmos dados. O que alguém muda aqui aparece no Hub e vice-versa. Histórico e avisos continuam sendo gravados pelo próprio banco.
 
-Fica no Hub antigo, com link, o que precisa de servidor: convidar e gerenciar usuários, ler o Drive na hora (a leitura automática de 10 em 10 min continua rodando lá) e Ads por oferta.
+Tudo roda neste site, inclusive o que antes precisava do servidor do Hub:
+
+- **Ads por oferta:** lê pela função `offer_ads_snapshot` a contagem que o robô salva a cada 10 min (ClickUp + docs de COPY ADS). Só admin.
+- **Esqueci a senha e definir senha:** o e-mail traz o link de volta para este site.
+- **Convidar, reenviar link, trocar papel, ativar e desativar usuário:** pelas funções `admin_invite_user`, `admin_set_user_role` e `admin_set_user_active`. Só admin, com as mesmas travas do Hub: ninguém tira o próprio admin nem se desativa.
+- **Ler o Drive agora:** a função `drive_scan_now` dispara o mesmo pedido do robô de 10 em 10 min.
+
+Enquanto uma dessas funções não existir no banco, o botão abre a mesma tela no Hub antigo em vez de quebrar.
+
+O robô que lê o Drive e conta o COPY ADS continua sendo o do Hub do Lovable (roda lá de 10 em 10 min). Se aquele servidor for desligado, a Entrada do Drive e o Ads por oferta param de atualizar.
 
 Demo com dados de exemplo, sem tocar no banco: https://harrycopy.github.io/hub/?demo
 

@@ -117,6 +117,12 @@
     })();
     return reloading;
   }
+  // ação de admin pelo banco; se a função ainda não existe lá, abre a mesma tela no Hub antigo
+  const hubOr = (p, path, onFail) => p.catch((e) => {
+    if (onFail) onFail();
+    if (e && e.code === LIVE.NEEDS_HUB) { toast(t('Not available here yet · opening the old Hub')); return window.open(window.HUB_URL + path, '_blank', 'noopener'); }
+    toast(t('Not saved: {e}', { e: errText(e) }));
+  });
   const reloadSoon = (ms) => { clearTimeout(reloadTimer); reloadTimer = setTimeout(reload, ms == null ? 1500 : ms); };
   async function loadExtras(offerId, quiet) {
     if (!LIVE) return;
@@ -425,6 +431,20 @@
   }
 
   // ---------- login ----------
+  // aberta pelo link do e-mail (convite ou esqueci a senha): define a senha e entra
+  function viewSetPassword() {
+    return `<div class="auth"><section class="auth-form" style="grid-column:1/-1"><form class="auth-card" data-form="setpw" novalidate>
+      <span class="auth-ic">${IC.lock}</span>
+      <p class="eyebrow">${esc(t('Restricted access'))}</p>
+      <h2>${esc(t('Set your password'))}</h2>
+      <p class="muted">${esc(LIVE.session && LIVE.session.user ? LIVE.session.user.email : '')}</p>
+      <div class="login-f">
+        <label class="mf"><span>${esc(t('New password'))}</span><input name="password" type="password" autocomplete="new-password" minlength="8" required></label>
+        <label class="mf"><span>${esc(t('Repeat the password'))}</span><input name="password2" type="password" autocomplete="new-password" minlength="8" required></label>
+        <p class="merr" role="alert"></p>
+        <button class="btn primary big">${esc(t('Save and sign in'))}</button>
+      </div></form></section></div>`;
+  }
   function viewLogin() {
     return `<div class="auth">
       <section class="auth-brand">
@@ -449,8 +469,8 @@
             <p class="merr" role="alert"></p>
             <button class="btn primary big">${esc(t('Sign in'))}</button>
           </div>
-          <p class="auth-links"><a class="link" href="${window.HUB_URL}/esqueci-senha" target="_blank" rel="noopener">${esc(t('Forgot password'))}</a><a class="link" href="?demo">${esc(t('See the demo with sample data'))}</a></p>
-          <p class="auth-note">${esc(t('Access restricted to invited users. New users are invited in the Hub.'))}</p>
+          ${LIVE.linkError ? `<p class="merr" role="alert">${esc(t('The email link expired or was already used. Ask for a new one in Forgot password.'))}</p>` : ''}<p class="auth-links"><button type="button" class="link" data-a="forgot">${esc(t('Forgot password'))}</button><a class="link" href="?demo">${esc(t('See the demo with sample data'))}</a></p>
+          <p class="auth-note">${esc(t('Access restricted to invited users.'))}</p>
           <div class="auth-tools"><button type="button" class="tool lang" data-a="lang"><b class="${UI.lang === 'en' ? 'on' : ''}">EN</b><b class="${UI.lang === 'pt' ? 'on' : ''}">PT</b></button>${themeBtn()}</div>
         </form>` : `<div class="auth-card">
           <span class="auth-ic">${IC.lock}</span>
@@ -788,7 +808,7 @@
     const selN = D.sel.size;
     return `<div class="ph"><div><p class="eyebrow">${esc(t('Admin / Drive Inbox'))}</p><h1 class="page-title">${esc(t('Drive Inbox'))}</h1>
       <p class="muted">${esc(t('Every new batch dropped into an "EDIÇÃO - ADS" folder shows up here. Turn it into a demand in one click.'))}</p></div>
-      <div class="ph-a"><button class="btn ghost" data-a="adList">${IC.list}${esc(t('Demand from ad list'))}</button><button class="btn primary" data-a="scan">${LIVE ? IC.ext : IC.refresh}${esc(LIVE ? t('Read Drive now (in the Hub)') : t('Read Drive now'))}</button></div></div>
+      <div class="ph-a"><button class="btn ghost" data-a="adList">${IC.list}${esc(t('Demand from ad list'))}</button><button class="btn primary" data-a="scan">${IC.refresh}${esc(t('Read Drive now'))}</button></div></div>
       <div class="scanline"><span>${IC.clock}${esc(t('Last automatic scan'))}: <b>${esc(ago(DB.scans.auto))}</b></span>${DB.scans.manual ? `<span>${esc(t('Last manual scan'))}: <b>${esc(ago(DB.scans.manual.at))}</b> · ${esc(t('{b} new batches, {f} files', { b: DB.scans.manual.b, f: DB.scans.manual.f }))}</span>` : ''}<span class="muted">${esc(t('Incremental every 10 min · full read every 24 h'))}</span></div>
       <div class="viewbar"><div class="seg">${tabs.map(([k, l]) => `<button class="${D.tab === k ? 'on' : ''}" data-a="driveTab" data-v="${k}">${esc(l)} <b class="count">${DB.batches.filter((b) => b.status === k && !b.removed).length}</b></button>`).join('')}</div></div>
       ${bySource.length ? bySource.map(([s, list]) => `<section class="src"><header><div><b>${esc(catLabel(s.product))}</b><small>${esc(s.path)}</small>${s.error ? `<small class="err">${esc(s.error)}</small>` : ''}</div><button class="link" data-a="selFolder" data-id="${s.id}">${esc(t('Select all in this folder'))}</button></header>${list.map(batchCard).join('')}</section>`).join('') : `<div class="empty"><b>${esc(t('Nothing here.'))}</b></div>`}
@@ -836,7 +856,7 @@
     } else if (tab === 'integrations') {
       c = `<p class="muted">${esc(t('Today every metric is typed by hand. These connections would pull spend, clicks and revenue automatically.'))}</p><div class="ints">${DB.integrations.map((x) => `<div class="int"><span class="int-ic">${esc(x.platform.slice(0, 2))}</span><b>${esc(x.platform)}</b><small>${esc(t('Not connected'))}</small><button class="btn ghost xs" disabled>${esc(t('Coming soon'))}</button></div>`).join('')}</div>`;
     } else {
-      c = `<div class="row-a"><button class="btn primary sm" data-a="invite">${LIVE ? IC.ext : IC.plus}${esc(t('Invite user'))}</button>${LIVE ? `<span class="muted small">${esc(t('Invites, roles and access need the server, so they open in the Hub.'))}</span>` : ''}</div><div class="tbl-wrap"><table class="tbl"><thead><tr><th>${esc(t('Name'))}</th><th>Email</th><th>${esc(t('Role'))}</th><th>${esc(t('Demands'))}</th><th>${esc(t('Last access'))}</th><th>${esc(t('Access'))}</th><th></th></tr></thead><tbody>
+      c = `<div class="row-a"><button class="btn primary sm" data-a="invite">${IC.plus}${esc(t('Invite user'))}</button></div><div class="tbl-wrap"><table class="tbl"><thead><tr><th>${esc(t('Name'))}</th><th>Email</th><th>${esc(t('Role'))}</th><th>${esc(t('Demands'))}</th><th>${esc(t('Last access'))}</th><th>${esc(t('Access'))}</th><th></th></tr></thead><tbody>
         ${DB.users.map((u) => { const self = u.id === UI.user; return `<tr class="${u.active ? '' : 'off'}"><td><span class="avatar sm">${esc(initials(u.name))}</span> <b>${esc(u.name)}</b>${self ? ` <span class="tag">${esc(t('you'))}</span>` : ''}</td><td class="muted">${esc(u.email)}</td><td><select data-ch="role" data-id="${u.id}"${self ? ' disabled' : ''}><option value="admin"${u.role === 'admin' ? ' selected' : ''}>${esc(t('Administrator'))}</option><option value="gestor"${u.role === 'gestor' ? ' selected' : ''}>${esc(t('Traffic manager'))}</option></select></td><td class="mono">${DB.offers.filter((o) => o.assignee === u.id).length}</td><td class="muted">${u.last ? esc(ago(u.last)) : esc(t('never signed in'))}</td><td>${u.active ? `<span class="tag green">${esc(t('Active'))}</span>` : `<span class="tag">${esc(t('Inactive'))}</span>`}</td><td class="r">${u.last ? '' : `<button class="link" data-a="resend" data-id="${u.id}">${esc(t('Resend invite'))}</button> `}<button class="link" data-a="toggleUser" data-id="${u.id}"${self ? ' disabled' : ''}>${esc(u.active ? t('Deactivate') : t('Activate'))}</button></td></tr>`; }).join('')}
       </tbody></table></div>`;
     }
@@ -1303,6 +1323,7 @@
     document.documentElement.lang = UI.lang === 'pt' ? 'pt-BR' : 'en';
     const focus = document.activeElement && document.activeElement.id ? { id: document.activeElement.id, s: document.activeElement.selectionStart } : null;
     if (UI.boot) { app.innerHTML = `<div class="boot"><span class="brand-mark">${IC.layers}</span><p>${esc(t('Loading the operation…'))}</p></div>`; return; }
+    if (LIVE && LIVE.recovery && LIVE.session) { app.innerHTML = viewSetPassword(); document.title = 'Traffic Hub · ' + t('Set your password'); return; }
     if (!UI.user) { app.innerHTML = viewLogin(); document.title = 'Traffic Hub · ' + t('Sign in'); return; }
     if (UI.denied) { app.innerHTML = `<div class="empty big boot"><b>${esc(t('Access not granted'))}</b><p class="muted">${esc(t('Ask the workspace administrator to grant access.'))}</p><button class="btn ghost" data-a="signOut">${esc(t('Sign out'))}</button></div>`; return; }
     const r = route();
@@ -1404,7 +1425,7 @@
       if (first) { const b = DB.batches.find((x) => x.id === first.f.batch); const src = b && DB.sources.find((x) => x.id === b.source); if (src) { if (src.product) { const c = modalRoot.querySelector(`input[name=products][value="${src.product}"]`); if (c) c.checked = true; } if (src.niche) modalRoot.querySelector('select[name=niche]').value = src.niche; if (src.channel) modalRoot.querySelector('select[name=channel]').value = src.channel; } }
     },
     scan: () => {
-      if (LIVE) return window.open(window.HUB_URL + '/entrada-drive', '_blank', 'noopener');
+      if (LIVE) return hubOr(LIVE.scanNow().then(() => { toast(t('Reading Drive now · new batches show up here in a few minutes')); setTimeout(() => reloadSoon(), 45000); }), '/entrada-drive');
       const s =DB.sources.filter((x) => x.active)[Math.floor(Math.random() * DB.sources.filter((x) => x.active).length)];
       const p = cat(s.product); const nf = 3 + Math.floor(Math.random() * 6);
       const b = { id: uid('b'), source: s.id, name: 'LOTE ' + String(DB.batches.filter((x) => x.source === s.id).length + 1).padStart(2, '0') + ' - ' + new Date().toISOString().slice(5, 10), status: 'new', reason: null, offer: null, removed: null, arrived: now() };
@@ -1472,14 +1493,29 @@
       }, { wide: true, ok: t('Create demands') });
     },
     hubAdmin: () => window.open(window.HUB_URL + '/admin', '_blank', 'noopener'),
-    invite: () => LIVE ? A.hubAdmin() : openModal(t('Invite user'), `${field(t('Name'), '<input name="name" required>')}${field('Email', '<input name="email" type="email" required>')}${field(t('Role'), `<select name="role"><option value="gestor">${esc(t('Traffic manager'))}</option><option value="admin">${esc(t('Administrator'))}</option></select>`)}`, (fd) => {
+    forgot: (el) => {
+      const f = el.closest('form'); const email = (f.querySelector('input[name=email]').value || '').trim(); const err = f.querySelector('.login-f .merr');
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { err.textContent = t('Type your email above, then click Forgot password.'); return; }
+      el.disabled = true; err.textContent = '';
+      LIVE.sendPasswordLink(email).then(() => { err.textContent = ''; toast(t('If this email is in the team, a link to set the password is on its way.')); }).catch((e) => { el.disabled = false; err.textContent = errText(e); });
+    },
+    invite: () => LIVE ? openModal(t('Invite user'), `${field(t('Name'), '<input name="name" required>')}${field('Email', '<input name="email" type="email" required>')}${field(t('Role'), `<select name="role"><option value="gestor">${esc(t('Traffic manager'))}</option><option value="admin">${esc(t('Administrator'))}</option></select>`)}<p class="muted small">${esc(t('The person gets an email with a link to set the password and comes straight to this site.'))}</p>`, (fd) => {
+      const name = (fd.get('name') || '').trim(), email = (fd.get('email') || '').trim().toLowerCase();
+      if (!name || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return mErr(t('Name and a valid email are required.'));
+      if (DB.users.some((u) => (u.email || '').toLowerCase() === email)) return mErr(t('This email is already in the team.'));
+      const btn = modalRoot.querySelector('footer .btn.primary'); btn.disabled = true;
+      return LIVE.invite(email, name, fd.get('role')).then(async () => { closeModal(); await reload(); toast(t('Invite sent to {e}', { e: email })); })
+        .catch((e) => { btn.disabled = false; if (e.code === LIVE.NEEDS_HUB) { closeModal(); return A.hubAdmin(); } mErr(t('Not saved: {e}', { e: errText(e) })); });
+    }, { ok: t('Send invite') }) : openModal(t('Invite user'), `${field(t('Name'), '<input name="name" required>')}${field('Email', '<input name="email" type="email" required>')}${field(t('Role'), `<select name="role"><option value="gestor">${esc(t('Traffic manager'))}</option><option value="admin">${esc(t('Administrator'))}</option></select>`)}`, (fd) => {
       const name = (fd.get('name') || '').trim(), email = (fd.get('email') || '').trim();
       if (!name || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return mErr(t('Name and a valid email are required.'));
       if (DB.users.some((u) => u.email.toLowerCase() === email.toLowerCase())) return mErr(t('This email is already in the team.'));
       DB.users.push({ id: uid('u'), name, email, role: fd.get('role'), active: true, last: null }); commit(); closeModal(); toast(t('Invite sent to {e} (simulated)', { e: email })); render();
     }, { ok: t('Send invite') }),
-    resend: (el) => LIVE ? A.hubAdmin() : toast(t('Invite resent to {e} (simulated)', { e: user(el.dataset.id).email })),
-    toggleUser: (el) => { if (LIVE) return A.hubAdmin(); const u = user(el.dataset.id); if (u.id === UI.user) return; u.active = !u.active; commit(); toast(u.active ? t('{n} can sign in again', { n: u.name }) : t('{n} lost access', { n: u.name })); render(); },
+    resend: (el) => LIVE ? LIVE.sendPasswordLink(user(el.dataset.id).email).then(() => toast(t('Link to set the password sent to {e}', { e: user(el.dataset.id).email }))).catch((e) => toast(t('Not sent: {e}', { e: errText(e) }))) : toast(t('Invite resent to {e} (simulated)', { e: user(el.dataset.id).email })),
+    toggleUser: (el) => {
+      if (LIVE) { const u = user(el.dataset.id); if (!u || u.id === UI.user) return; return hubOr(LIVE.setActive(u.id, !u.active).then(async () => { await reload(); toast(!u.active ? t('{n} can sign in again', { n: u.name }) : t('{n} lost access', { n: u.name })); }), '/admin'); }
+      const u = user(el.dataset.id); if (u.id === UI.user) return; u.active = !u.active; commit(); toast(u.active ? t('{n} can sign in again', { n: u.name }) : t('{n} lost access', { n: u.name })); render(); },
     newMech: () => openModal(t('New mechanism'), field(t('Name'), '<input name="label" required>'), (fd) => {
       const l = (fd.get('label') || '').trim(); if (!l) return mErr(t('Give it a name.'));
       if (DB.catalog.some((c) => c.kind === 'mechanism' && c.label.toLowerCase() === l.toLowerCase())) return mErr(t('That mechanism already exists.'));
@@ -1531,7 +1567,7 @@
       lastSel = id; return render();
     }
     if (k === 'selAll') { const S = el.dataset.scope === 'rep' ? UI.rep : UI.pipe; document.querySelectorAll(`[data-ch="sel"][data-scope="${el.dataset.scope}"]`).forEach((x) => (el.checked ? S.sel.add(x.dataset.id) : S.sel.delete(x.dataset.id))); return render(); }
-    if (k === 'role' && LIVE) { render(); return A.hubAdmin(); }
+    if (k === 'role' && LIVE) { const u = user(el.dataset.id); return hubOr(LIVE.setRole(u.id, el.value).then(async () => { await reload(); toast(t('{n} is now {r}', { n: u.name, r: roleLabel(el.value) })); }), '/admin', () => render()); }
     if (k === 'role') { const u = user(el.dataset.id); u.role = el.value; commit(); toast(t('{n} is now {r}', { n: u.name, r: roleLabel(u.role) })); return render(); }
   });
   document.addEventListener('keydown', (e) => {
@@ -1562,6 +1598,14 @@
     e.preventDefault();
     const fd = new FormData(f);
     if (k === 'modal' && modalSubmit) return modalSubmit(fd);
+    if (k === 'setpw') {
+      const btn = f.querySelector('button.btn'); const err = f.querySelector('.merr');
+      const pw = String(fd.get('password') || ''), pw2 = String(fd.get('password2') || '');
+      if (pw.length < 8) { err.textContent = t('Use a password with at least 8 characters.'); return; }
+      if (pw !== pw2) { err.textContent = t('The passwords do not match.'); return; }
+      btn.disabled = true; err.textContent = '';
+      return LIVE.setPassword(pw).then(() => { toast(t('Password saved')); boot(); }).catch((e) => { btn.disabled = false; err.textContent = errText(e); });
+    }
     if (k === 'login') {
       const btn = f.querySelector('button.btn'); const err = f.querySelector('.merr');
       btn.disabled = true; err.textContent = '';
@@ -1623,6 +1667,7 @@
     try {
       await LIVE.getSession();
       if (!LIVE.session) { UI.boot = false; UI.user = null; return render(); }
+      if (LIVE.recovery) { UI.boot = false; return render(); }
       const meRow = await LIVE.identity();
       if (!meRow || !meRow.active || !meRow.role) { UI.user = meRow ? meRow.id : null; UI.denied = true; UI.boot = false; return render(); }
       UI.denied = false;

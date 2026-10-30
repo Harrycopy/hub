@@ -5,6 +5,11 @@
   const KEY = 'sb_publishable_ZlwVn4d7_F67LO2JcwF2qA_K_KtDrrA';
   window.HUB_URL = 'https://traffic-status-hub.lovable.app';
   if (!window.supabase || !window.supabase.createClient) return;
+  // link de "definir senha" do e-mail: lido antes do cliente, que apaga o endereço ao entrar
+  const AUTH_HASH = new URLSearchParams(location.hash.replace(/^#/, ''));
+  const RECOVERY = /^(recovery|invite)$/.test(AUTH_HASH.get('type') || '');
+  const LINK_ERROR = AUTH_HASH.get('error_code') || AUTH_HASH.get('error') || '';
+  const SITE = location.origin + location.pathname;
   const sb = window.supabase.createClient(URL_, KEY, { auth: { persistSession: true, autoRefreshToken: true, storageKey: 'traffic-hub-claude-auth' } });
 
   const ST_IN = { aprovados: 'test', testando: 'testing', escalando: 'scaling', validado: 'validated', rejeitados: 'rejected', vendeu_nao_validou: 'sold_nv', vendeu_rejeitado: 'sold_rej' };
@@ -93,9 +98,27 @@
     return { rows, updatedAt: copy ? copy.updatedAt || null : null, counting: !copy };
   }
 
+  // função do banco que ainda não foi criada: o site manda para o Hub antigo em vez de quebrar
+  const NEEDS_HUB = 'needs-hub';
+  async function rpc(name, args) {
+    const r = await sb.rpc(name, args || {});
+    if (r.error) { if (r.error.code === 'PGRST202' || /Could not find the function/i.test(r.error.message || '')) { const e = new Error(NEEDS_HUB); e.code = NEEDS_HUB; throw e; } throw r.error; }
+    return r.data;
+  }
+
   const L = {
     sb,
     offerAdsRows,
+    NEEDS_HUB,
+    recovery: RECOVERY,
+    linkError: LINK_ERROR,
+    // ---- usuários e senha (antes só no servidor do Hub) ----
+    async sendPasswordLink(email) { const r = await sb.auth.resetPasswordForEmail(String(email).trim().toLowerCase(), { redirectTo: SITE }); if (r.error) throw r.error; },
+    async setPassword(pw) { const r = await sb.auth.updateUser({ password: pw }); if (r.error) throw r.error; L.recovery = false; },
+    async invite(email, name, role) { await rpc('admin_invite_user', { _email: email, _full_name: name, _role: role }); await L.sendPasswordLink(email); },
+    async setRole(id, role) { await rpc('admin_set_user_role', { _user_id: id, _role: role }); },
+    async setActive(id, active) { await rpc('admin_set_user_active', { _user_id: id, _active: active }); },
+    async scanNow() { return rpc('drive_scan_now'); },
     session: null,
     me: null, // { id, role, active, name, email }
     async getSession() { const r = await sb.auth.getSession(); L.session = r.data.session; return L.session; },
