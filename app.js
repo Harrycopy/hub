@@ -892,6 +892,8 @@
   const fieldBox = (label, inner, cls) => `<div class="mf ${cls || ''}"><span>${esc(label)}</span>${inner}</div>`;
   const options = (list, val, empty) => (empty ? `<option value="">${esc(empty)}</option>` : '') + list.map(([v, l]) => `<option value="${esc(v)}"${v === val ? ' selected' : ''}>${esc(l)}</option>`).join('');
   const activeOpts = (kind) => catalogOf(kind).map((c) => [c.id, c.label]);
+  // canal padrão: o Meta do catálogo (no banco real é um uuid; 'c_meta' só existe no demo)
+  const metaChannel = () => (catalogOf('channel').find((c) => /^meta$/i.test(c.label)) || catalogOf('channel')[0] || {}).id || null;
   const mgrOpts = () => DB.users.filter((u) => u.active).map((u) => [u.id, u.name + ' · ' + roleLabel(u.role)]);
 
   function reasonModal(ids, st, current, keep) {
@@ -909,7 +911,7 @@
     }, { ok: t('Confirm') });
   }
   function offerModal(o, prefill, after) {
-    const v = o || Object.assign({ products: [], vsls: [], mechanisms: [], channel: 'c_meta', niche: '', assignee: '', name: '', drive: '', description: '', notes: '', deadline: '' }, prefill || {});
+    const v = o || Object.assign({ products: [], vsls: [], mechanisms: [], channel: metaChannel(), niche: '', assignee: '', name: '', drive: '', description: '', notes: '', deadline: '' }, prefill || {});
     openModal(o ? t('Edit demand #{n}', { n: o.number }) : t('New demand'), `<div class="mgrid">
       ${field(t('Name'), `<input name="name" required value="${esc(v.name)}">`, 'full')}
       ${field(t('Drive folder link'), `<input name="drive" type="url" required placeholder="https://drive.google.com/…" value="${esc(v.drive)}">`, 'full')}
@@ -1319,7 +1321,7 @@
     const segs = String(s.path || '').split('/').map(norm);
     const product = s.product || (catalogOf('product', true).find((c) => segs.includes(norm(c.label))) || {}).id || null;
     const niche = s.niche || (DB.niches.find((n) => segs.includes(norm(n.label)) || segs.includes(norm(n.labelPt))) || {}).id || '';
-    return { name: catLabel(product) + ' — ' + b.name, drive: 'https://drive.google.com/drive/folders/' + (b.folder || 'demo-' + b.id), products: product ? [product] : [], niche, channel: s.channel || 'c_meta', vsls: [], mechanisms: [] };
+    return { name: catLabel(product) + ' — ' + b.name, drive: 'https://drive.google.com/drive/folders/' + (b.folder || 'demo-' + b.id), products: product ? [product] : [], niche, channel: s.channel || metaChannel(), vsls: [], mechanisms: [] };
   }
 
   // ---------- render ----------
