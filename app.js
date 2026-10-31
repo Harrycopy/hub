@@ -1449,11 +1449,23 @@
     batchRestoreMany: () => { const ids = [...UI.drive.sel]; ids.forEach((id) => { const b = DB.batches.find((x) => x.id === id); b.status = b.offer ? 'linked' : 'new'; b.reason = null; }); commit(); clearSel(); remote(() => LIVE.restoreBatches(ids)); toast(t('{n} batches restored', { n: ids.length })); render(); },
     batchCreateMany: () => {
       const bs = [...UI.drive.sel].map((id) => DB.batches.find((x) => x.id === id)).filter((b) => b.status === 'new');
+      // pasta do Drive sem produto ou nicho padrão: o modal pede os dois e eles valem só para essas pastas
+      const bare = bs.filter((b) => { const d = batchDefaults(b); return !d.products.length || !d.niche; });
+      const bareBox = bare.length ? `<p class="muted full">${esc(t('These folders have no default product or niche: {f}. Pick them below (they only apply to these folders).', { f: bare.map((b) => b.name).join(', ') }))}</p>
+        ${field(t('Products'), checks('products', activeOpts('product'), []), 'full')}${field(t('Niche'), `<select name="niche">${options(DB.niches.map((n) => [n.id, nicheLabel(n.id)]), '', t('Choose'))}</select>`)}` : '';
       openModal(t('Create {n} demands', { n: bs.length }), `<p class="muted">${esc(t('One demand per batch and per manager, named "Product — batch". Shared fields below.'))}</p>
         ${fieldBox('VSLs', pick('vsls', activeOpts('vsl'), [], t('Choose VSLs')), 'full')}${field(t('Mechanisms'), checks('mechanisms', activeOpts('mechanism'), []), 'full')}
-        ${fieldBox(t('Managers'), pick('assignee', mgrOpts(), [], t('Choose managers')))}${field(t('Deadline'), '<input type="date" name="deadline">')}`, (fd) => {
+        ${fieldBox(t('Managers'), pick('assignee', mgrOpts(), [], t('Choose managers')))}${field(t('Deadline'), '<input type="date" name="deadline">')}${bareBox}`, (fd) => {
         const vs = fd.getAll('vsls'), ms = fd.getAll('mechanisms'), as = fd.getAll('assignee');
         if (!vs.length || !ms.length || !as.length) return mErr(t('Pick VSL, mechanism and manager.'));
+        const fbProducts = fd.getAll('products'), fbNiche = fd.get('niche') || '';
+        if (bare.length && (!fbProducts.length || !fbNiche)) return mErr(t('Pick the product and the niche for the folders without a default.'));
+        const defaultsOf = (b) => {
+          const d = batchDefaults(b);
+          if (!d.products.length) { d.products = fbProducts; d.name = fbProducts.map(catLabel).join(' + ') + ' — ' + b.name; }
+          if (!d.niche) d.niche = fbNiche;
+          return d;
+        };
         // o banco liga cada lote a uma demanda só: o 1º gestor fica com o lote; os outros ganham demanda própria com os mesmos anúncios (nome e link do vídeo)
         const adFiles = (b) => DB.files.filter((f) => f.batch === b.id && !f.removed && (!f.mime || /^(video|image)\//.test(f.mime)));
         const adName = (name) => name.replace(/\.[A-Za-z0-9]{2,5}$/, '').trim();
@@ -1464,7 +1476,7 @@
             try {
               // se cair no meio, o que já foi criado fica e o resto dá para refazer
               for (const b of bs) {
-                const base = Object.assign(batchDefaults(b), { vsls: vs, mechanisms: ms, deadline: fd.get('deadline') || null, description: '', notes: '' });
+                const base = Object.assign(defaultsOf(b), { vsls: vs, mechanisms: ms, deadline: fd.get('deadline') || null, description: '', notes: '' });
                 if (!base.products.length || !base.niche) throw new Error(t('Folder "{f}" has no default product or niche. Create this one alone.', { f: b.name }));
                 for (const [i, m] of as.entries()) {
                   const saved = await LIVE.saveOffer(null, Object.assign({}, base, { assignee: m }));
@@ -1479,7 +1491,7 @@
         }
         let total = 0, made = 0;
         bs.forEach((b) => {
-          const d = batchDefaults(b); const files = adFiles(b);
+          const d = defaultsOf(b); const files = adFiles(b);
           as.forEach((m, i) => {
             const n = String(Math.max(0, ...DB.offers.map((x) => +x.number)) + 1).padStart(4, '0');
             const o = Object.assign({ id: uid('o'), number: n, created: now(), archived: null, source: null, description: '', notes: '', deadline: fd.get('deadline') ? fd.get('deadline') + 'T23:59:00' : null }, d, { vsls: vs, mechanisms: ms, assignee: m });

@@ -141,6 +141,8 @@ window.PT = {
   'Delete test': 'Excluir teste',
   'Demo with sample data.': 'Demo com dados de exemplo.',
   'Folder "{f}" has no default product or niche. Create this one alone.': 'A pasta "{f}" não tem produto ou nicho padrão. Crie essa sozinha.',
+  'These folders have no default product or niche: {f}. Pick them below (they only apply to these folders).': 'Estas pastas não têm produto ou nicho padrão: {f}. Escolha abaixo (vale só para elas).',
+  'Pick the product and the niche for the folders without a default.': 'Escolha o produto e o nicho para as pastas sem padrão.',
   'Forgot password': 'Esqueci a senha',
   'Go to the real Hub sign-in': 'Ir para o login real',
   'Invites, roles and access need the server, so they open in the Hub.': 'Convite, papel e acesso precisam do servidor, então abrem no Hub.',
