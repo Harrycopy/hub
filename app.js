@@ -1314,7 +1314,12 @@
   }
   function batchDefaults(b) {
     const s = DB.sources.find((x) => x.id === b.source);
-    return { name: catLabel(s.product) + ' — ' + b.name, drive: 'https://drive.google.com/drive/folders/' + (b.folder || 'demo-' + b.id), products: s.product ? [s.product] : [], niche: s.niche || '', channel: s.channel || 'c_meta', vsls: [], mechanisms: [] };
+    // pasta descoberta sozinha vem sem nicho (às vezes sem produto): lê do caminho, "EUA / PRODUTOS NOVOS / Memória / NEUROTAMINE / VSL1006 / EDIÇÃO - ADS"
+    const norm = (x) => String(x || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+    const segs = String(s.path || '').split('/').map(norm);
+    const product = s.product || (catalogOf('product', true).find((c) => segs.includes(norm(c.label))) || {}).id || null;
+    const niche = s.niche || (DB.niches.find((n) => segs.includes(norm(n.label)) || segs.includes(norm(n.labelPt))) || {}).id || '';
+    return { name: catLabel(product) + ' — ' + b.name, drive: 'https://drive.google.com/drive/folders/' + (b.folder || 'demo-' + b.id), products: product ? [product] : [], niche, channel: s.channel || 'c_meta', vsls: [], mechanisms: [] };
   }
 
   // ---------- render ----------
@@ -1451,15 +1456,16 @@
       const bs = [...UI.drive.sel].map((id) => DB.batches.find((x) => x.id === id)).filter((b) => b.status === 'new');
       // pasta do Drive sem produto ou nicho padrão: o modal pede os dois e eles valem só para essas pastas
       const bare = bs.filter((b) => { const d = batchDefaults(b); return !d.products.length || !d.niche; });
+      const needProduct = bare.some((b) => !batchDefaults(b).products.length), needNiche = bare.some((b) => !batchDefaults(b).niche);
       const bareBox = bare.length ? `<p class="muted full">${esc(t('These folders have no default product or niche: {f}. Pick them below (they only apply to these folders).', { f: bare.map((b) => b.name).join(', ') }))}</p>
-        ${field(t('Products'), checks('products', activeOpts('product'), []), 'full')}${field(t('Niche'), `<select name="niche">${options(DB.niches.map((n) => [n.id, nicheLabel(n.id)]), '', t('Choose'))}</select>`)}` : '';
+        ${needProduct ? fieldBox(t('Products'), pick('products', activeOpts('product'), [], t('Choose products')), 'full') : ''}${needNiche ? field(t('Niche'), `<select name="niche">${options(DB.niches.map((n) => [n.id, nicheLabel(n.id)]), '', t('Choose'))}</select>`) : ''}` : '';
       openModal(t('Create {n} demands', { n: bs.length }), `<p class="muted">${esc(t('One demand per batch and per manager, named "Product — batch". Shared fields below.'))}</p>
         ${fieldBox('VSLs', pick('vsls', activeOpts('vsl'), [], t('Choose VSLs')), 'full')}${field(t('Mechanisms'), checks('mechanisms', activeOpts('mechanism'), []), 'full')}
         ${fieldBox(t('Managers'), pick('assignee', mgrOpts(), [], t('Choose managers')))}${field(t('Deadline'), '<input type="date" name="deadline">')}${bareBox}`, (fd) => {
         const vs = fd.getAll('vsls'), ms = fd.getAll('mechanisms'), as = fd.getAll('assignee');
         if (!vs.length || !ms.length || !as.length) return mErr(t('Pick VSL, mechanism and manager.'));
         const fbProducts = fd.getAll('products'), fbNiche = fd.get('niche') || '';
-        if (bare.length && (!fbProducts.length || !fbNiche)) return mErr(t('Pick the product and the niche for the folders without a default.'));
+        if ((needProduct && !fbProducts.length) || (needNiche && !fbNiche)) return mErr(t('Pick the product and the niche for the folders without a default.'));
         const defaultsOf = (b) => {
           const d = batchDefaults(b);
           if (!d.products.length) { d.products = fbProducts; d.name = fbProducts.map(catLabel).join(' + ') + ' — ' + b.name; }
