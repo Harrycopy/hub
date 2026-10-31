@@ -250,6 +250,7 @@
     },
     // mesmos campos que o import_batch_files do banco grava (canal fica com o padrão do banco)
     async insertAds(offerId, rows) { if (!rows.length) return []; return must(await sb.from('ads').insert(rows.map((r) => ({ offer_id: offerId, name: r.name, link: r.link, platform_ad_id: null }))).select('id')); },
+    async setOfferAdsChannel(offerId, channel) { if (channel) must(await sb.from('ads').update({ channel_id: channel }).eq('offer_id', offerId).select('id')); },
     async insertAd(offerId, name, channel, link) { must(await sb.from('ads').insert({ offer_id: offerId, name, channel_id: channel, platform_ad_id: null, link: link || null }).select('id').single()); },
     async insertTest(x) {
       must(await sb.from('ad_tests').insert({ ad_id: x.ad, offer_id: x.offer, start_date: x.start, end_date: x.end, spend: x.spend, revenue: x.revenue, impressions: x.impressions, clicks: x.clicks, conversions: x.conversions, classification: x.cls === 'effective' ? 'assertivo' : x.cls === 'not_effective' ? 'nao_assertivo' : null, notes: x.notes || null }).select('id').single());

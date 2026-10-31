@@ -1463,10 +1463,12 @@
         ${needProduct ? fieldBox(t('Products'), pick('products', activeOpts('product'), [], t('Choose products')), 'full') : ''}${needNiche ? field(t('Niche'), `<select name="niche">${options(DB.niches.map((n) => [n.id, nicheLabel(n.id)]), '', t('Choose'))}</select>`) : ''}` : '';
       openModal(t('Create {n} demands', { n: bs.length }), `<p class="muted">${esc(t('One demand per batch and per manager, named "Product — batch". Shared fields below.'))}</p>
         ${fieldBox('VSLs', pick('vsls', activeOpts('vsl'), [], t('Choose VSLs')), 'full')}${field(t('Mechanisms'), checks('mechanisms', activeOpts('mechanism'), []), 'full')}
-        ${fieldBox(t('Managers'), pick('assignee', mgrOpts(), [], t('Choose managers')))}${field(t('Deadline'), '<input type="date" name="deadline">')}${bareBox}`, (fd) => {
+        ${fieldBox(t('Managers'), pick('assignee', mgrOpts(), [], t('Choose managers')))}${field(t('Deadline'), '<input type="date" name="deadline">')}
+        <div class="mf full mgr-ch" hidden><span>${esc(t('Channel per manager'))}</span>${mgrOpts().map(([id]) => `<label class="mgr-row" data-mgr-ch="${esc(id)}" hidden><b>${esc(user(id).name)}</b><select name="ch_${esc(id)}">${options(activeOpts('channel'), metaChannel())}</select></label>`).join('')}</div>${bareBox}`, (fd) => {
         const vs = fd.getAll('vsls'), ms = fd.getAll('mechanisms'), as = fd.getAll('assignee');
         if (!vs.length || !ms.length || !as.length) return mErr(t('Pick VSL, mechanism and manager.'));
         const fbProducts = fd.getAll('products'), fbNiche = fd.get('niche') || '';
+        const chOf = (m) => fd.get('ch_' + m) || metaChannel();
         if ((needProduct && !fbProducts.length) || (needNiche && !fbNiche)) return mErr(t('Pick the product and the niche for the folders without a default.'));
         const defaultsOf = (b) => {
           const d = batchDefaults(b);
@@ -1487,9 +1489,10 @@
                 const base = Object.assign(defaultsOf(b), { vsls: vs, mechanisms: ms, deadline: fd.get('deadline') || null, description: '', notes: '' });
                 if (!base.products.length || !base.niche) throw new Error(t('Folder "{f}" has no default product or niche. Create this one alone.', { f: b.name }));
                 for (const [i, m] of as.entries()) {
-                  const saved = await LIVE.saveOffer(null, Object.assign({}, base, { assignee: m }));
+                  const saved = await LIVE.saveOffer(null, Object.assign({}, base, { assignee: m, channel: chOf(m) }));
                   if (i === 0) await LIVE.linkBatch(b.id, saved.id);
                   else await LIVE.insertAds(saved.id, adFiles(b).map((f) => ({ name: adName(f.name), link: 'https://drive.google.com/file/d/' + f.fileId + '/view' })));
+                  await LIVE.setOfferAdsChannel(saved.id, chOf(m)); // os anúncios rodam no canal do gestor
                   done++;
                 }
               }
@@ -1502,7 +1505,7 @@
           const d = defaultsOf(b); const files = adFiles(b);
           as.forEach((m, i) => {
             const n = String(Math.max(0, ...DB.offers.map((x) => +x.number)) + 1).padStart(4, '0');
-            const o = Object.assign({ id: uid('o'), number: n, created: now(), archived: null, source: null, description: '', notes: '', deadline: fd.get('deadline') ? fd.get('deadline') + 'T23:59:00' : null }, d, { vsls: vs, mechanisms: ms, assignee: m });
+            const o = Object.assign({ id: uid('o'), number: n, created: now(), archived: null, source: null, description: '', notes: '', deadline: fd.get('deadline') ? fd.get('deadline') + 'T23:59:00' : null }, d, { vsls: vs, mechanisms: ms, assignee: m, channel: chOf(m) });
             DB.offers.push(o); log(o.id, 'offer_created', { name: o.name }); log(o.id, 'assigned', { to: m }); notify(m, o.id, 'assigned'); made++;
             if (i === 0) { total += linkBatch(b, o); return; }
             files.forEach((f) => DB.ads.push({ id: uid('a'), offer: o.id, name: adName(f.name), channel: o.channel, link: 'https://drive.google.com/file/d/' + f.id + '/view', status: 'test', changed: now(), reason: '', created: now(), trashed: null, trashPrev: null, origin: null, targetVsl: null, targetProducts: null }));
@@ -1570,7 +1573,11 @@
   let lastSel = null;
   document.addEventListener('change', (e) => {
     const box = e.target.closest && e.target.closest('details.pick');
-    if (box) { box.querySelector('summary').textContent = pickSum([...box.querySelectorAll('.pick-list input:checked')].map((x) => x.nextElementSibling.textContent), box.dataset.ph); return; }
+    if (box) {
+      box.querySelector('summary').textContent = pickSum([...box.querySelectorAll('.pick-list input:checked')].map((x) => x.nextElementSibling.textContent), box.dataset.ph);
+      if (e.target.name === 'assignee') { const on = new Set([...modalRoot.querySelectorAll('input[name=assignee]:checked')].map((x) => x.value)); modalRoot.querySelectorAll('[data-mgr-ch]').forEach((r) => { r.hidden = !on.has(r.dataset.mgrCh); }); const c = modalRoot.querySelector('.mgr-ch'); if (c) c.hidden = !on.size; }
+      return;
+    }
     const el = e.target; const k = el.dataset.ch; if (!k) return;
     if (k === 'status') return changeStatus([el.dataset.id], el.value);
     if (k === 'filter') { const f = scopeF(el.dataset.scope); f[el.dataset.key] = el.type === 'checkbox' ? el.checked : el.value; UI.openMs = null; return render(); }

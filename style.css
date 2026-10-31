@@ -733,3 +733,6 @@ kbd { display: inline-block; padding: 1px 6px; border: 1px solid var(--line2); b
 .ws.panel .pl, .ws.panel .ar a { background: color-mix(in srgb, var(--s1) 86%, transparent); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
 @media (max-width: 760px) { .ms-num { flex-direction: column; gap: 2px; } }
 @media print { .money-bg, .ms-live-row { display: none; } }
+.mgr-ch[hidden], .mgr-row[hidden] { display: none !important; }
+.mgr-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.mgr-row select { width: 200px; }
